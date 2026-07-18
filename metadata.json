@@ -1,0 +1,6 @@
+{
+  "name": "Piracy Lunacy",
+  "description": "A tactical multiplayer pirate strategy game inspired by Opendominion and Utopia. Build your fleet, conquer islands, establish trade routes, and plunder your rivals.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,8 @@
+{
+  "firestore": [
+    {
+      "database": "ai-studio-piracylunacy-bc3f1352-8aa3-4eca-8753-19c9d8a3d910",
+      "rules": "firestore.rules"
+    }
+  ]
+}
