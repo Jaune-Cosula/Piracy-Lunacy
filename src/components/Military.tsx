@@ -860,6 +860,20 @@ export const Military: React.FC<MilitaryProps> = ({
                       
                       <div>⛵ Defense Ships:</div>
                       <div className="text-right text-neutral-100">{totalShips} ({rep.sloop} sl / {rep.schooner} sch / {rep.frigate} fr / {rep.galleon} gl)</div>
+
+                      {rep.gold !== undefined && (
+                        <>
+                          <div>💰 Scouted Gold:</div>
+                          <div className="text-right text-yellow-400 font-bold">{rep.gold.toLocaleString()} G</div>
+                        </>
+                      )}
+
+                      {rep.goods !== undefined && (
+                        <>
+                          <div>📦 Scouted Goods:</div>
+                          <div className="text-right text-teal-400 font-bold">{rep.goods.toLocaleString()}</div>
+                        </>
+                      )}
                     </div>
 
                     {/* Combat Strength Breakdown */}

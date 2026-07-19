@@ -127,11 +127,11 @@ export default function App() {
     return () => clearInterval(interval);
   }, [gameState]);
 
-  const handleRegister = async (username: string, flagId: number, flagColor: string) => {
+  const handleRegister = async (username: string, email: string, password: string, flagId: number, flagColor: string) => {
     const res = await fetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, flagId, flagColor })
+      body: JSON.stringify({ username, email, password, flagId, flagColor })
     });
     
     if (res.ok) {
@@ -146,11 +146,11 @@ export default function App() {
     }
   };
 
-  const handleLogin = async (username: string) => {
+  const handleLogin = async (username: string, password: string) => {
     const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username })
+      body: JSON.stringify({ username, password })
     });
     
     if (res.ok) {

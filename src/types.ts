@@ -38,6 +38,8 @@ export interface GamePort {
   baseGoldProduction: number;
   baseGoodsProduction: number;
   buildQueue?: BuildItem[];
+  gold?: number;
+  goods?: number;
 }
 
 export interface TradeRoute {
@@ -102,6 +104,8 @@ export interface ScoutReport {
     ticksRemaining: number;
     destination: string;
   }[];
+  gold?: number;
+  goods?: number;
 }
 
 export interface ForumReply {
@@ -140,6 +144,7 @@ export interface GameState {
   tickSpeedMode: 'normal' | 'fast' | 'debug'; // normal = 15m, fast = 30s, debug = 5m
   forum?: ForumPost[];
   isPaused?: boolean;
+  authStore?: Record<string, { passwordHash: string; salt: string; email: string }>;
 }
 
 // Ship static properties

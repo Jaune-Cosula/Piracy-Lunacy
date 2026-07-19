@@ -281,6 +281,40 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   </div>
                 </div>
               </div>
+
+              {/* Construction & Training Queue */}
+              {selectedPort.buildQueue && selectedPort.buildQueue.length > 0 && (
+                <div className="mt-4 p-4 bg-slate-950 rounded-2xl border border-rose-500/20">
+                  <h4 className="text-[10px] font-mono text-rose-400 font-bold mb-2 tracking-wider uppercase flex items-center gap-1.5 animate-pulse">
+                    <Activity className="w-3.5 h-3.5 text-rose-400" />
+                    CONSTRUCTION & TRAINING QUEUE ({selectedPort.buildQueue.length})
+                  </h4>
+                  <div className="space-y-2">
+                    {selectedPort.buildQueue.map((item) => {
+                      const percentage = Math.round(((item.totalTicks - item.ticksRemaining) / item.totalTicks) * 100);
+                      return (
+                        <div key={item.id} className="text-xs font-mono flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 bg-slate-900/40 rounded-xl border border-slate-800">
+                          <div>
+                            <span className="font-bold text-slate-200 capitalize">{item.type}</span>
+                            <span className="text-neutral-400 ml-1.5">x{item.count}</span>
+                          </div>
+                          <div className="flex items-center gap-3 w-full sm:w-64">
+                            <div className="flex-grow bg-slate-950 rounded-full h-1.5 border border-slate-800 overflow-hidden">
+                              <div 
+                                className="bg-rose-500 h-1.5 rounded-full transition-all duration-500" 
+                                style={{ width: `${percentage}%` }}
+                              />
+                            </div>
+                            <span className="text-[10px] text-yellow-400 font-bold whitespace-nowrap">
+                              {item.ticksRemaining} tick{item.ticksRemaining > 1 ? 's' : ''} left
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Recruits and Upgrades */}

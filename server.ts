@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import { initializeApp, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
@@ -101,6 +102,14 @@ const NPC_FACTIONS = [
   { id: 'npc_independent', name: 'Independent Merchants', color: 'bg-slate-500' }
 ];
 
+function generateSalt(): string {
+  return crypto.randomBytes(16).toString('hex');
+}
+
+function hashPassword(password: string, salt: string): string {
+  return crypto.createHmac('sha256', salt).update(password).digest('hex');
+}
+
 // Initialize Game State
 function createInitialState(): GameState {
   const ports: Record<string, GamePort> = {};
@@ -159,7 +168,9 @@ function createInitialState(): GameState {
             razedTicksRemaining: 0,
             baseGoldProduction: Math.floor(Math.random() * 100) + 150, // base 150-250 gold per tick
             baseGoodsProduction: Math.floor(Math.random() * 30) + 50,  // base 50-80 goods per tick
-            buildQueue: []
+            buildQueue: [],
+            gold: isNPC ? Math.floor(Math.random() * 2000) + 1500 : 0,
+            goods: isNPC ? Math.floor(Math.random() * 800) + 500 : 0
           };
           
           nameIndex++;
@@ -217,6 +228,7 @@ async function loadStateFromFirestore(forceCheck = false) {
       if (!state.campaigns) state.campaigns = [];
       if (!state.tradeRoutes) state.tradeRoutes = [];
       if (!state.news) state.news = [];
+      if (!state.authStore) state.authStore = {};
       if (!state.gameStartTime) state.gameStartTime = new Date().toISOString();
       if (!state.roundLimitTicks) state.roundLimitTicks = 2000;
       Object.values(state.ports).forEach(p => {
@@ -252,6 +264,7 @@ async function loadStateFromFirestore(forceCheck = false) {
           if (!state.campaigns) state.campaigns = [];
           if (!state.tradeRoutes) state.tradeRoutes = [];
           if (!state.news) state.news = [];
+          if (!state.authStore) state.authStore = {};
           if (!state.gameStartTime) state.gameStartTime = new Date().toISOString();
           if (!state.roundLimitTicks) state.roundLimitTicks = 2000;
           Object.values(state.ports).forEach(p => {
@@ -405,6 +418,27 @@ export function processGameTick() {
                          (port.galleon * SHIP_CONFIGS.galleon.upkeepGold);
                          
       playerUpkeep[pId].gold += troopUpkeep + scoutUpkeep + shipUpkeep;
+    } else {
+      // NPC / independent port: accumulate gold and goods treasury
+      if (port.gold === undefined) port.gold = 0;
+      if (port.goods === undefined) port.goods = 0;
+      
+      let multiplier = 1.0;
+      if (port.razedTicksRemaining > 24) {
+        multiplier = 1 / 3;
+      } else if (port.razedTicksRemaining > 0) {
+        multiplier = 2 / 3;
+      }
+      
+      const goldProduced = Math.floor(port.baseGoldProduction * multiplier);
+      const goodsProduced = Math.floor(port.baseGoodsProduction * multiplier);
+      
+      port.gold += goldProduced;
+      port.goods += goodsProduced;
+      
+      // Limit total hoard to prevent infinite growth
+      if (port.gold > 15000) port.gold = 15000;
+      if (port.goods > 6000) port.goods = 6000;
     }
   });
 
@@ -882,9 +916,18 @@ function resolveBattle(c: FleetCampaign) {
         defenderPlayer.gold -= plunderedGold;
         defenderPlayer.goods -= plunderedGoods;
       } else {
-        // NPC ports produce a large instant bounty of gold and goods
-        plunderedGold = Math.floor(targetPort.baseGoldProduction * 4);
-        plunderedGoods = Math.floor(targetPort.baseGoodsProduction * 4);
+        // NPC ports accumulate gold and goods; plunder loots 80% of it, with a base minimum
+        plunderedGold = Math.floor((targetPort.gold || 0) * 0.8);
+        plunderedGoods = Math.floor((targetPort.goods || 0) * 0.8);
+        
+        const minGold = Math.floor(targetPort.baseGoldProduction * 4);
+        const minGoods = Math.floor(targetPort.baseGoodsProduction * 4);
+        if (plunderedGold < minGold) plunderedGold = minGold;
+        if (plunderedGoods < minGoods) plunderedGoods = minGoods;
+        
+        // Deduct from NPC port treasury
+        targetPort.gold = Math.max(0, (targetPort.gold || 0) - plunderedGold);
+        targetPort.goods = Math.max(0, (targetPort.goods || 0) - plunderedGoods);
       }
       
       // Cap plunder based on attacker's cargo space!
@@ -1077,6 +1120,10 @@ function resolveScout(c: FleetCampaign) {
       destination: cam.targetPortName
     }));
 
+  const targetOwner = targetPort.ownerId ? state.players[targetPort.ownerId] : null;
+  const reportGold = targetOwner ? targetOwner.gold : (targetPort.gold || 0);
+  const reportGoods = targetOwner ? targetOwner.goods : (targetPort.goods || 0);
+
   const report: ScoutReport = {
     id: `report_${Date.now()}_${Math.floor(Math.random()*1000)}`,
     senderId: c.senderId,
@@ -1090,7 +1137,9 @@ function resolveScout(c: FleetCampaign) {
     frigate: targetPort.frigate,
     galleon: targetPort.galleon,
     fortificationLevel: targetPort.fortificationLevel,
-    activeFleets
+    activeFleets,
+    gold: reportGold,
+    goods: reportGoods
   };
 
   state.scoutReports.push(report);
@@ -1186,12 +1235,20 @@ function authenticateToken(req: express.Request, res: express.Response, next: ex
 
 // Auth Routes
 app.post('/api/auth/register', (req, res) => {
-  const { username, flagId, flagColor } = req.body;
+  const { username, email, password, flagId, flagColor } = req.body;
   
   if (!username || typeof username !== 'string' || username.trim().length < 2) {
     return res.status(400).json({ error: 'Valid Username is required (min 2 characters)' });
   }
   const name = username.trim();
+
+  if (!email || typeof email !== 'string' || !email.includes('@')) {
+    return res.status(400).json({ error: 'A valid email address is required for password recovery' });
+  }
+
+  if (!password || typeof password !== 'string' || password.length < 4) {
+    return res.status(400).json({ error: 'Password must be at least 4 characters long' });
+  }
   
   // Cap at 40 active players
   if (Object.keys(state.players).length >= 40) {
@@ -1242,6 +1299,16 @@ app.post('/api/auth/register', (req, res) => {
   };
   
   state.players[playerId] = newPlayer;
+
+  // Hash & Save password
+  const salt = generateSalt();
+  const passwordHash = hashPassword(password, salt);
+  if (!state.authStore) state.authStore = {};
+  state.authStore[name.toLowerCase()] = {
+    passwordHash,
+    salt,
+    email: email.trim().toLowerCase()
+  };
   
   state.news.push({
     id: `new_player_${playerId}`,
@@ -1258,9 +1325,12 @@ app.post('/api/auth/register', (req, res) => {
 });
 
 app.post('/api/auth/login', (req, res) => {
-  const { username } = req.body;
+  const { username, password } = req.body;
   if (!username) {
     return res.status(400).json({ error: 'Username is required' });
+  }
+  if (!password) {
+    return res.status(400).json({ error: 'Password is required' });
   }
   
   const player = Object.values(state.players).find(
@@ -1270,11 +1340,62 @@ app.post('/api/auth/login', (req, res) => {
   if (!player) {
     return res.status(404).json({ error: 'Dread pirate not found. Register an account!' });
   }
+
+  // Handle credentials check
+  if (!state.authStore) state.authStore = {};
+  let authData = state.authStore[player.username.toLowerCase()];
+  if (!authData) {
+    // Graceful onboarding for legacy accounts: set their password upon first login!
+    const salt = generateSalt();
+    const passwordHash = hashPassword(password, salt);
+    state.authStore[player.username.toLowerCase()] = {
+      passwordHash,
+      salt,
+      email: 'legacy_recovery@example.com'
+    };
+    authData = state.authStore[player.username.toLowerCase()];
+  } else {
+    // Verify password
+    const checkHash = hashPassword(password, authData.salt);
+    if (checkHash !== authData.passwordHash) {
+      return res.status(401).json({ error: 'Invalid secret key (password), Captain!' });
+    }
+  }
   
   player.lastActiveTime = new Date().toISOString();
   saveDb();
   
   res.json({ token: player.id, player });
+});
+
+app.post('/api/auth/recover', (req, res) => {
+  const { username, email, newPassword } = req.body;
+  if (!username || !email || !newPassword) {
+    return res.status(400).json({ error: 'Username, recovery email and new password are required' });
+  }
+
+  if (!state.authStore) state.authStore = {};
+  const authData = state.authStore[username.trim().toLowerCase()];
+  
+  if (!authData || authData.email.toLowerCase() !== email.trim().toLowerCase()) {
+    return res.status(400).json({ error: 'Captain, the pirate name and recovery email do not match our ship logs!' });
+  }
+
+  if (newPassword.length < 4) {
+    return res.status(400).json({ error: 'New password must be at least 4 characters long' });
+  }
+
+  // Update password credentials
+  const salt = generateSalt();
+  const passwordHash = hashPassword(newPassword, salt);
+  state.authStore[username.trim().toLowerCase()] = {
+    passwordHash,
+    salt,
+    email: email.trim().toLowerCase()
+  };
+
+  saveDb();
+  res.json({ success: true, message: 'Password reset successfully, Captain!' });
 });
 
 app.get('/api/auth/me', authenticateToken, (req, res) => {
