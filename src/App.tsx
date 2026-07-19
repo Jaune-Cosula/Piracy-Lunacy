@@ -22,6 +22,30 @@ import {
   MessageSquare
 } from 'lucide-react';
 
+// Helper to format duration beautifully in Finnish or clear UI
+const formatDuration = (ms: number) => {
+  if (ms <= 0) return '0s';
+  const totalSecs = Math.floor(ms / 1000);
+  const days = Math.floor(totalSecs / (24 * 3600));
+  const hours = Math.floor((totalSecs % (24 * 3600)) / 3600);
+  const mins = Math.floor((totalSecs % 3600) / 60);
+  const secs = totalSecs % 60;
+  
+  let parts: string[] = [];
+  if (days > 0) parts.push(`${days}d`);
+  if (hours > 0 || days > 0) parts.push(`${hours}h`);
+  if (mins > 0 || hours > 0 || days > 0) parts.push(`${mins}m`);
+  parts.push(`${secs}s`);
+  return parts.join(' ');
+};
+
+// Countdown clock format
+const formatCountdown = (secs: number) => {
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${m}m ${s < 10 ? '0' : ''}${s}s`;
+};
+
 export default function App() {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('piracy_token'));
   const [player, setPlayer] = useState<Player | null>(null);
@@ -360,43 +384,6 @@ export default function App() {
     return { netGold, netGoods: grossGoods, upkeepGold, grossGold };
   }, [gameState, player]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center text-rose-500 font-mono gap-3">
-        <Anchor className="w-12 h-12 animate-spin text-rose-500" />
-        <span className="text-sm tracking-widest text-neutral-400">SAILING THE GAME ENGINE SEAS...</span>
-      </div>
-    );
-  }
-
-  if (!token || !player) {
-    return <Auth onRegister={handleRegister} onLogin={handleLogin} />;
-  }
-
-  // Countdown clock format
-  const formatCountdown = (secs: number) => {
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return `${m}m ${s < 10 ? '0' : ''}${s}s`;
-  };
-
-  // Helper to format duration beautifully in Finnish or clear UI
-  const formatDuration = (ms: number) => {
-    if (ms <= 0) return '0s';
-    const totalSecs = Math.floor(ms / 1000);
-    const days = Math.floor(totalSecs / (24 * 3600));
-    const hours = Math.floor((totalSecs % (24 * 3600)) / 3600);
-    const mins = Math.floor((totalSecs % 3600) / 60);
-    const secs = totalSecs % 60;
-    
-    let parts: string[] = [];
-    if (days > 0) parts.push(`${days}d`);
-    if (hours > 0 || days > 0) parts.push(`${hours}h`);
-    if (mins > 0 || hours > 0 || days > 0) parts.push(`${mins}m`);
-    parts.push(`${secs}s`);
-    return parts.join(' ');
-  };
-
   const elapsedPlayTime = useMemo(() => {
     if (!gameState || !gameState.gameStartTime) return '0s';
     const start = new Date(gameState.gameStartTime).getTime();
@@ -415,6 +402,19 @@ export default function App() {
     const totalSecs = (remainingTicks - 1) * tickDurationSecs + secondsToNextTick;
     return formatDuration(Math.max(0, totalSecs * 1000));
   }, [gameState, secondsToNextTick]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center text-rose-500 font-mono gap-3">
+        <Anchor className="w-12 h-12 animate-spin text-rose-500" />
+        <span className="text-sm tracking-widest text-neutral-400">SAILING THE GAME ENGINE SEAS...</span>
+      </div>
+    );
+  }
+
+  if (!token || !player) {
+    return <Auth onRegister={handleRegister} onLogin={handleLogin} />;
+  }
 
   // Percent progress bar for ticks
   const tickDurationSeconds = gameState?.tickSpeedMode === 'fast' 

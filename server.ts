@@ -37,12 +37,46 @@ try {
   console.error('Error reading firebase-applet-config.json:', e);
 }
 
-const projectId = firebaseConfig?.projectId || 'calcium-form-07c1c';
-const firestoreDatabaseId = firebaseConfig?.firestoreDatabaseId || 'ai-studio-piracylunacy-bc3f1352-8aa3-4eca-8753-19c9d8a3d910';
+const projectId = process.env.FIREBASE_PROJECT_ID || firebaseConfig?.projectId || 'calcium-form-07c1c';
+const firestoreDatabaseId = process.env.FIRESTORE_DATABASE_ID || firebaseConfig?.firestoreDatabaseId || 'ai-studio-piracylunacy-bc3f1352-8aa3-4eca-8753-19c9d8a3d910';
 
-admin.initializeApp({
+const adminConfig: any = {
   projectId: projectId
-});
+};
+
+// Support initializing firebase-admin via service account JSON in external deployments (like Render)
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  const creds = process.env.FIREBASE_SERVICE_ACCOUNT.trim();
+  if (creds) {
+    try {
+      let parsedCreds: any = null;
+      if (creds.startsWith('{')) {
+        parsedCreds = JSON.parse(creds);
+      } else {
+        // Try decoding as base64 in case they encoded it to avoid multi-line issues in env vars
+        try {
+          const decoded = Buffer.from(creds, 'base64').toString('utf8');
+          if (decoded.startsWith('{')) {
+            parsedCreds = JSON.parse(decoded);
+          }
+        } catch (base64Err) {
+          // Not base64, ignore
+        }
+      }
+
+      if (parsedCreds) {
+        adminConfig.credential = (admin as any).credential.cert(parsedCreds);
+        console.log('Firebase Admin initialized successfully using FIREBASE_SERVICE_ACCOUNT.');
+      } else {
+        console.warn('FIREBASE_SERVICE_ACCOUNT was provided but does not appear to be a valid JSON object or Base64-encoded JSON. Please make sure to copy the entire JSON content of your service account file.');
+      }
+    } catch (e: any) {
+      console.warn('Failed to parse FIREBASE_SERVICE_ACCOUNT environment variable. Please ensure it is a valid JSON string:', e.message || e);
+    }
+  }
+}
+
+admin.initializeApp(adminConfig);
 
 const db = getFirestore(firestoreDatabaseId);
 
