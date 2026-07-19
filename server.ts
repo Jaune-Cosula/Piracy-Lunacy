@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
-import admin from 'firebase-admin';
+import { initializeApp, cert } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { 
   GameState, 
@@ -65,7 +65,7 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
       }
 
       if (parsedCreds) {
-        adminConfig.credential = (admin as any).credential.cert(parsedCreds);
+        adminConfig.credential = cert(parsedCreds);
         console.log('Firebase Admin initialized successfully using FIREBASE_SERVICE_ACCOUNT.');
       } else {
         console.warn('FIREBASE_SERVICE_ACCOUNT was provided but does not appear to be a valid JSON object or Base64-encoded JSON. Please make sure to copy the entire JSON content of your service account file.');
@@ -76,7 +76,7 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
   }
 }
 
-admin.initializeApp(adminConfig);
+initializeApp(adminConfig);
 
 const db = getFirestore(firestoreDatabaseId);
 
