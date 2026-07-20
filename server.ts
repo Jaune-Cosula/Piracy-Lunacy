@@ -859,10 +859,10 @@ function resolveBattle(c: FleetCampaign) {
 
       c.troops = Math.max(0, Math.floor(c.troops * attackerSurvival));
       c.cannons = Math.max(0, Math.floor(c.cannons * attackerSurvival));
-      c.sloop = Math.max(0, Math.floor(c.sloop * (1 - loserLossRatio * 0.75)));
-      c.schooner = Math.max(0, Math.floor(c.schooner * (1 - loserLossRatio * 0.75)));
-      c.frigate = Math.max(0, Math.floor(c.frigate * (1 - loserLossRatio * 0.5)));
-      c.galleon = Math.max(0, Math.floor(c.galleon * (1 - loserLossRatio * 0.4)));
+      c.sloop = Math.max(0, Math.round(c.sloop * (1 - loserLossRatio * 0.75)));
+      c.schooner = Math.max(0, Math.round(c.schooner * (1 - loserLossRatio * 0.75)));
+      c.frigate = Math.max(0, Math.round(c.frigate * (1 - loserLossRatio * 0.5)));
+      c.galleon = Math.max(0, Math.round(c.galleon * (1 - loserLossRatio * 0.4)));
       
       const lostTroops = oldAttackerTroops - c.troops;
       const lostCannons = oldAttackerCannons - c.cannons;
@@ -1069,10 +1069,10 @@ function resolveBattle(c: FleetCampaign) {
 
       c.troops = Math.max(0, Math.floor(c.troops * attackerSurvival));
       c.cannons = Math.max(0, Math.floor(c.cannons * attackerSurvival));
-      c.sloop = Math.max(0, Math.floor(c.sloop * (1 - loserLossRatio * 0.65)));
-      c.schooner = Math.max(0, Math.floor(c.schooner * (1 - loserLossRatio * 0.65)));
-      c.frigate = Math.max(0, Math.floor(c.frigate * (1 - loserLossRatio * 0.45)));
-      c.galleon = Math.max(0, Math.floor(c.galleon * (1 - loserLossRatio * 0.35)));
+      c.sloop = Math.max(0, Math.round(c.sloop * (1 - loserLossRatio * 0.65)));
+      c.schooner = Math.max(0, Math.round(c.schooner * (1 - loserLossRatio * 0.65)));
+      c.frigate = Math.max(0, Math.round(c.frigate * (1 - loserLossRatio * 0.45)));
+      c.galleon = Math.max(0, Math.round(c.galleon * (1 - loserLossRatio * 0.35)));
       
       const lostTroops = oldAttackerTroops - c.troops;
       const lostCannons = oldAttackerCannons - c.cannons;
