@@ -789,10 +789,10 @@ function resolveBattle(c: FleetCampaign) {
       // Attacker casualties
       c.troops = Math.max(0, Math.floor(c.troops * attackerSurvival));
       c.cannons = Math.max(0, Math.floor(c.cannons * attackerSurvival));
-      c.sloop = Math.max(0, Math.floor(c.sloop * (1 - winnerLossRatio * 0.75)));
-      c.schooner = Math.max(0, Math.floor(c.schooner * (1 - winnerLossRatio * 0.75)));
-      c.frigate = Math.max(0, Math.floor(c.frigate * (1 - winnerLossRatio * 0.5)));
-      c.galleon = Math.max(0, Math.floor(c.galleon * (1 - winnerLossRatio * 0.4)));
+      c.sloop = Math.max(0, Math.round(c.sloop * (1 - winnerLossRatio * 0.75)));
+      c.schooner = Math.max(0, Math.round(c.schooner * (1 - winnerLossRatio * 0.75)));
+      c.frigate = Math.max(0, Math.round(c.frigate * (1 - winnerLossRatio * 0.5)));
+      c.galleon = Math.max(0, Math.round(c.galleon * (1 - winnerLossRatio * 0.4)));
       
       // Consume 1 Governor
       c.governors -= 1;
@@ -903,10 +903,10 @@ function resolveBattle(c: FleetCampaign) {
       
       c.troops = Math.max(0, Math.floor(c.troops * attackerSurvival));
       c.cannons = Math.max(0, Math.floor(c.cannons * attackerSurvival));
-      c.sloop = Math.max(0, Math.floor(c.sloop * (1 - winnerLossRatio * 0.5)));
-      c.schooner = Math.max(0, Math.floor(c.schooner * (1 - winnerLossRatio * 0.5)));
-      c.frigate = Math.max(0, Math.floor(c.frigate * (1 - winnerLossRatio * 0.3)));
-      c.galleon = Math.max(0, Math.floor(c.galleon * (1 - winnerLossRatio * 0.2)));
+      c.sloop = Math.max(0, Math.round(c.sloop * (1 - winnerLossRatio * 0.5)));
+      c.schooner = Math.max(0, Math.round(c.schooner * (1 - winnerLossRatio * 0.5)));
+      c.frigate = Math.max(0, Math.round(c.frigate * (1 - winnerLossRatio * 0.3)));
+      c.galleon = Math.max(0, Math.round(c.galleon * (1 - winnerLossRatio * 0.2)));
       
       targetPort.troops = Math.max(0, Math.floor(targetPort.troops * defenderSurvival));
       targetPort.cannons = Math.max(0, Math.floor(targetPort.cannons * defenderSurvival));
@@ -1024,10 +1024,10 @@ function resolveBattle(c: FleetCampaign) {
       
       c.troops = Math.max(0, Math.floor(c.troops * attackerSurvival));
       c.cannons = Math.max(0, Math.floor(c.cannons * attackerSurvival));
-      c.sloop = Math.max(0, Math.floor(c.sloop * (1 - winnerLossRatio * 0.6)));
-      c.schooner = Math.max(0, Math.floor(c.schooner * (1 - winnerLossRatio * 0.6)));
-      c.frigate = Math.max(0, Math.floor(c.frigate * (1 - winnerLossRatio * 0.4)));
-      c.galleon = Math.max(0, Math.floor(c.galleon * (1 - winnerLossRatio * 0.3)));
+      c.sloop = Math.max(0, Math.round(c.sloop * (1 - winnerLossRatio * 0.6)));
+      c.schooner = Math.max(0, Math.round(c.schooner * (1 - winnerLossRatio * 0.6)));
+      c.frigate = Math.max(0, Math.round(c.frigate * (1 - winnerLossRatio * 0.4)));
+      c.galleon = Math.max(0, Math.round(c.galleon * (1 - winnerLossRatio * 0.3)));
       
       const killedTroops = Math.floor(targetPort.troops * loserLossRatio);
       const killedCannons = Math.floor(targetPort.cannons * loserLossRatio);
