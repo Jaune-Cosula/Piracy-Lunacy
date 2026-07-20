@@ -5,6 +5,7 @@ import { Dashboard } from './components/Dashboard.tsx';
 import { Military } from './components/Military.tsx';
 import { Leaderboard } from './components/Leaderboard.tsx';
 import { Forum } from './components/Forum.tsx';
+import { GameGuide } from './components/GameGuide.tsx';
 import { GameState, Player, GamePort, SHIP_CONFIGS, UPKEEP_TROOP, UPKEEP_SCOUT } from './types.ts';
 import { FlagSymbol } from './components/FlagSymbol.tsx';
 import { 
@@ -53,6 +54,7 @@ export default function App() {
   const [selectedPortId, setSelectedPortId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'map' | 'economy' | 'military' | 'ranks' | 'forum'>('map');
   const [loading, setLoading] = useState(true);
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
 
   // Time-to-next-tick state
   const [secondsToNextTick, setSecondsToNextTick] = useState<number>(0);
@@ -60,7 +62,11 @@ export default function App() {
   // Poll full game state
   const fetchGameState = async () => {
     try {
-      const res = await fetch('/api/game/state');
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      const res = await fetch('/api/game/state', { headers });
       if (res.ok) {
         const data: GameState = await res.json();
         setGameState(data);
@@ -492,25 +498,35 @@ export default function App() {
           {gameState && (
             <div className="flex items-center gap-4 bg-slate-950/60 px-4 py-2.5 rounded-2xl border border-slate-800/80 flex-1 lg:flex-initial font-mono">
               <div className="text-left flex-shrink-0">
-                <div className="text-[9px] text-neutral-500 tracking-wider font-bold uppercase">PELATTU AIKA</div>
+                <div className="text-[9px] text-neutral-500 tracking-wider font-bold uppercase">GAME TIME ELAPSED</div>
                 <div className="text-xs font-bold text-teal-400 mt-1">{elapsedPlayTime}</div>
               </div>
               <div className="h-6 w-[1px] bg-slate-800" />
               <div className="text-left flex-shrink-0">
-                <div className="text-[9px] text-neutral-500 tracking-wider font-bold uppercase">KIERROSTA JÄLJELLÄ</div>
+                <div className="text-[9px] text-neutral-500 tracking-wider font-bold uppercase">TIME REMAINING</div>
                 <div className="text-xs font-bold text-rose-400 mt-1">{remainingRoundTime}</div>
               </div>
             </div>
           )}
 
-          {/* Log out actions */}
-          <button
-            onClick={handleLogout}
-            className="flex items-center justify-center gap-2 bg-slate-950 hover:bg-slate-900 text-neutral-300 font-mono font-bold px-4 py-2 rounded-2xl border border-slate-800 text-xs transition self-start lg:self-auto"
-          >
-            <LogOut className="w-3.5 h-3.5 text-rose-500" />
-            Desert (Logout)
-          </button>
+          {/* Header Action Buttons */}
+          <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
+            <button
+              onClick={() => setIsGuideOpen(true)}
+              className="flex items-center justify-center gap-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 font-mono font-bold px-4 py-2 rounded-2xl border border-amber-500/30 text-xs transition"
+            >
+              <Compass className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
+              Game Manual & Guide
+            </button>
+
+            <button
+              onClick={handleLogout}
+              className="flex items-center justify-center gap-2 bg-slate-950 hover:bg-slate-900 text-neutral-300 font-mono font-bold px-4 py-2 rounded-2xl border border-slate-800 text-xs transition"
+            >
+              <LogOut className="w-3.5 h-3.5 text-rose-500" />
+              Desert (Logout)
+            </button>
+          </div>
 
         </div>
       </header>
@@ -738,6 +754,8 @@ export default function App() {
         </main>
 
       </div>
+
+      <GameGuide isOpen={isGuideOpen} onClose={() => setIsGuideOpen(false)} />
 
       {/* FOOTER */}
       <footer className="bg-transparent border-t border-slate-800/80 py-6 text-center text-[10px] font-mono text-neutral-500">

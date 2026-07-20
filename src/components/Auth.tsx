@@ -82,8 +82,8 @@ export const Auth: React.FC<AuthProps> = ({ onRegister, onLogin }) => {
 
     // Normal Register/Login flow
     if (isRegister) {
-      if (!email || !email.includes('@')) {
-        setErrorMsg('Please enter a valid email address.');
+      if (email.trim().length > 0 && !email.includes('@')) {
+        setErrorMsg('Please enter a valid email address containing @.');
         return;
       }
       if (!password || password.length < 4) {
@@ -182,12 +182,11 @@ export const Auth: React.FC<AuthProps> = ({ onRegister, onLogin }) => {
             <div className="space-y-1.5">
               <label className="text-[10px] font-black text-slate-500 tracking-wider flex items-center gap-1">
                 <Mail className="w-3 h-3 text-slate-500" />
-                DREAD EMAIL ADDRESS (FOR RECOVERY)
+                DREAD EMAIL ADDRESS (OPTIONAL FOR RECOVERY)
               </label>
               <input
                 type="email"
-                required
-                placeholder="pirate@caribbean.com"
+                placeholder="pirate@caribbean.com (optional)"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 focus:border-rose-500/60 rounded-xl px-4 py-2.5 text-sm text-white outline-none transition"

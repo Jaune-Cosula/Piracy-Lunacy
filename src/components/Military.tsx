@@ -598,6 +598,20 @@ export const Military: React.FC<MilitaryProps> = ({
                         <div className="text-right text-neutral-100">
                           {targetPort.sloop + targetPort.schooner + targetPort.frigate + targetPort.galleon} ({targetPort.sloop} sl / {targetPort.schooner} sch / {targetPort.frigate} fr / {targetPort.galleon} gl)
                         </div>
+
+                        {latestReportForTarget && latestReportForTarget.gold !== undefined && (
+                          <>
+                            <div className="text-yellow-400">💰 Scouted Gold:</div>
+                            <div className="text-right text-yellow-400 font-bold">{latestReportForTarget.gold.toLocaleString()} G</div>
+                          </>
+                        )}
+
+                        {latestReportForTarget && latestReportForTarget.goods !== undefined && (
+                          <>
+                            <div className="text-teal-400">📦 Scouted Goods:</div>
+                            <div className="text-right text-teal-400 font-bold">{latestReportForTarget.goods.toLocaleString()}</div>
+                          </>
+                        )}
                       </div>
 
                       <div className="border-t border-neutral-900 pt-2 space-y-2">

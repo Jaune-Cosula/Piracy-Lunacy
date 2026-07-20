@@ -292,11 +292,38 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <div className="space-y-2">
                     {selectedPort.buildQueue.map((item) => {
                       const percentage = Math.round(((item.totalTicks - item.ticksRemaining) / item.totalTicks) * 100);
+                      
+                      let typeLabel = item.type;
+                      let icon = '🔧';
+                      if (item.type === 'troops') {
+                        typeLabel = 'Pirate Crew (Barracks)';
+                        icon = '👥';
+                      } else if (item.type === 'cannons') {
+                        typeLabel = 'Defensive Artillery Cannons';
+                        icon = '💣';
+                      } else if (item.type === 'fort') {
+                        typeLabel = 'Fortification Wall';
+                        icon = '🏰';
+                      } else if (item.type === 'sloop') {
+                        typeLabel = 'Sloop (Light Corvette)';
+                        icon = '⛵';
+                      } else if (item.type === 'schooner') {
+                        typeLabel = 'Schooner (Merchant Trader)';
+                        icon = '⛵';
+                      } else if (item.type === 'frigate') {
+                        typeLabel = 'Frigate (Heavy Cruiser)';
+                        icon = '⚔️';
+                      } else if (item.type === 'galleon') {
+                        typeLabel = 'Galleon (Colossal Dreadnought)';
+                        icon = '🚢';
+                      }
+
                       return (
                         <div key={item.id} className="text-xs font-mono flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 bg-slate-900/40 rounded-xl border border-slate-800">
                           <div>
-                            <span className="font-bold text-slate-200 capitalize">{item.type}</span>
-                            <span className="text-neutral-400 ml-1.5">x{item.count}</span>
+                            <span className="mr-2 text-sm">{icon}</span>
+                            <span className="font-bold text-slate-200">{typeLabel}</span>
+                            <span className="text-neutral-400 ml-1.5 font-bold bg-neutral-900 px-1.5 py-0.5 rounded border border-slate-800">x{item.count}</span>
                           </div>
                           <div className="flex items-center gap-3 w-full sm:w-64">
                             <div className="flex-grow bg-slate-950 rounded-full h-1.5 border border-slate-800 overflow-hidden">

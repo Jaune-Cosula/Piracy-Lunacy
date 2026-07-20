@@ -282,7 +282,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                     : 'text-slate-500 border-transparent hover:text-slate-400'
                 }`}
               >
-                GLOBAALIT UUTISET
+                GLOBAL NEWS
               </button>
               <button
                 type="button"
@@ -293,7 +293,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                     : 'text-slate-500 border-transparent hover:text-slate-400'
                 }`}
               >
-                OMA SATAMAPÄIVÄKIRJA
+                PERSONAL LOG
               </button>
             </div>
             <div className="text-[10px] font-mono bg-neutral-950 px-2 py-0.5 rounded text-rose-400 border border-neutral-800">
@@ -303,7 +303,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
 
           <div className="flex-1 overflow-y-auto space-y-3.5 pr-1">
             {filteredNews.length === 0 ? (
-              <p className="text-neutral-500 text-xs font-mono italic p-6 text-center">Ei merkintöjä tällä välilehdellä.</p>
+              <p className="text-neutral-500 text-xs font-mono italic p-6 text-center">No log entries found on this tab.</p>
             ) : (
               filteredNews.slice().reverse().map(item => (
                 <div 
@@ -324,148 +324,6 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
             )}
           </div>
         </div>
-
-        {/* Developer Sandbox Panel */}
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-2xl">
-          <button
-            onClick={() => setDevModeExpanded(!devModeExpanded)}
-            className="w-full flex items-center justify-between text-xs font-black uppercase text-slate-500 tracking-widest"
-          >
-            <span className="flex items-center gap-1.5">
-              <Settings className="w-4 h-4 text-teal-400 animate-spin-slow" />
-              PIRACY SANDBOX (DEVELOPER DEV TOOLS)
-            </span>
-            <span className="text-[10px] bg-teal-950/40 text-teal-300 border border-teal-500/20 px-2 py-0.5 rounded">
-              {devModeExpanded ? 'CLOSE' : 'EXPAND'}
-            </span>
-          </button>
-
-          {devModeExpanded && (
-            <div className="mt-4 pt-3 border-t border-neutral-800 space-y-4 font-mono text-xs">
-              
-              {successMsg && (
-                <div className="p-2.5 bg-teal-950/40 border border-teal-500/30 rounded text-[11px] text-teal-200">
-                  {successMsg}
-                </div>
-              )}
-
-              <p className="text-[10.5px] text-neutral-400 leading-normal">
-                Because ticks take 15 minutes in standard play, we integrated a real-time developer sandbox! Here you can advance ticks instantly or accelerate intervals to 30 seconds to speed-run fleet voyages, combat, and resource loops.
-              </p>
-
-              <div className="flex flex-wrap gap-3">
-                <button
-                  onClick={handleDevTick}
-                  className="flex-1 min-w-[140px] bg-teal-600 hover:bg-teal-500 text-white font-bold py-2 rounded text-xs transition flex items-center justify-center gap-1.5"
-                >
-                  <Clock className="w-4 h-4" /> Trigger Game Tick (+1)
-                </button>
-
-                 <div className="flex-1 min-w-[220px] bg-neutral-950 rounded border border-neutral-800 flex items-center justify-between p-1">
-                  <span className="text-[10px] text-neutral-400 px-2">Tick Interval:</span>
-                  <div className="flex gap-1">
-                    <button
-                      onClick={() => handleDevSpeed('normal')}
-                      className={`px-2 py-1 rounded text-[10px] font-bold transition ${
-                        tickSpeedMode === 'normal' 
-                          ? 'bg-rose-600 text-white' 
-                          : 'bg-neutral-900 text-neutral-400 hover:text-white'
-                      }`}
-                    >
-                      15 Mins
-                    </button>
-                    <button
-                      onClick={() => handleDevSpeed('debug')}
-                      className={`px-2 py-1 rounded text-[10px] font-bold transition ${
-                        tickSpeedMode === 'debug' 
-                          ? 'bg-amber-600 text-white' 
-                          : 'bg-neutral-900 text-neutral-400 hover:text-white'
-                      }`}
-                    >
-                      5 Mins
-                    </button>
-                    <button
-                      onClick={() => handleDevSpeed('fast')}
-                      className={`px-2 py-1 rounded text-[10px] font-bold transition ${
-                        tickSpeedMode === 'fast' 
-                          ? 'bg-teal-600 text-white' 
-                          : 'bg-neutral-900 text-neutral-400 hover:text-white'
-                      }`}
-                    >
-                      30 Secs
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-1">
-                <button
-                  onClick={handleRestartNPCsAction}
-                  className="w-full bg-rose-600/10 hover:bg-rose-600/20 text-rose-400 border border-rose-500/20 font-bold py-2 px-4 rounded text-xs transition flex items-center justify-center gap-1.5"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" /> Re-start NPC Factions (Set Weak Defense)
-                </button>
-              </div>
-
-              {/* Maintenance Pause Button */}
-              <div className="pt-2 border-t border-neutral-800 space-y-2">
-                <div className="font-bold text-neutral-400 flex items-center gap-1.5 text-[10.5px]">
-                  <AlertTriangle className="w-3.5 h-3.5 text-amber-500 animate-pulse" /> DEVELOPMENT & MAINTENANCE SAFE MODE
-                </div>
-                <button
-                  onClick={handleTogglePauseAction}
-                  className={`w-full font-bold py-2 px-4 rounded text-xs transition flex items-center justify-center gap-1.5 ${
-                    isPaused 
-                      ? 'bg-amber-500 hover:bg-amber-400 text-slate-950 font-black' 
-                      : 'bg-amber-600/10 hover:bg-amber-600/20 text-amber-400 border border-amber-500/20'
-                  }`}
-                >
-                  {isPaused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
-                  {isPaused ? 'RESUME GAME CLOCK & DATABASE SYNC' : 'PAUSE GAME CLOCK (MAINTENANCE MODE)'}
-                </button>
-                <p className="text-[9px] text-neutral-500 leading-tight">
-                  Enable Maintenance Mode during code edits. This stops all background ticks and shields the database from any resets while you update files.
-                </p>
-              </div>
-
-              {/* Backup and Restore Buttons */}
-              <div className="pt-2 border-t border-neutral-800 space-y-2">
-                <div className="font-bold text-neutral-400 text-[10.5px]">DATABASE BACKUP & RECOVERY</div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={handleDownloadBackup}
-                    className="bg-teal-600/10 hover:bg-teal-600/20 text-teal-300 border border-teal-500/20 font-bold py-2 px-3 rounded text-xs transition flex items-center justify-center gap-1.5"
-                  >
-                    <Download className="w-3.5 h-3.5 text-teal-400" /> Export State (Download JSON)
-                  </button>
-                  
-                  <label className="bg-sky-600/10 hover:bg-sky-600/20 text-sky-300 border border-sky-500/20 font-bold py-2 px-3 rounded text-xs transition flex items-center justify-center gap-1.5 cursor-pointer text-center">
-                    <Upload className="w-3.5 h-3.5 text-sky-400" /> Import State (Upload JSON)
-                    <input 
-                      type="file" 
-                      accept=".json" 
-                      onChange={handleUploadBackup} 
-                      className="hidden" 
-                    />
-                  </label>
-                </div>
-                <p className="text-[9px] text-neutral-500 leading-tight">
-                  Download a snapshot of all active players, islands, alliances, and progress. You can upload it anytime to completely restore the database.
-                </p>
-              </div>
-
-              <div className="bg-neutral-950 p-3 rounded border border-neutral-800 text-[9.5px] text-neutral-400 space-y-1">
-                <div className="font-bold text-neutral-200">GAME ENGINE HEARTBEAT:</div>
-                <div>Last Dynamic Ticked Time: <span className="text-neutral-100">{new Date(lastTickTime).toLocaleString()}</span></div>
-                <div>Status: {isPaused ? <span className="text-amber-500 font-bold">🚨 PAUSED FOR MAINTENANCE</span> : <span className="text-emerald-400 font-bold">🟢 RUNNING ACTIVE</span>}</div>
-                <div>Server persistence: <span className="text-teal-400 flex items-center gap-0.5 inline-flex"><ShieldCheck className="w-3.5 h-3.5" /> Active (piracy_db.json / Firestore)</span></div>
-              </div>
-
-            </div>
-          )}
-        </div>
-
       </div>
 
     </div>

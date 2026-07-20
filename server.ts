@@ -77,9 +77,12 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
   }
 }
 
-initializeApp(adminConfig);
+const firebaseApp = initializeApp(adminConfig);
 
-const db = getFirestore(firestoreDatabaseId);
+// If database ID is 'default' or '(default)', use the default database. Otherwise, use the specified database ID.
+const db = (firestoreDatabaseId && firestoreDatabaseId !== 'default' && firestoreDatabaseId !== '(default)')
+  ? getFirestore(firebaseApp, firestoreDatabaseId)
+  : getFirestore(firebaseApp);
 
 // List of pirate-themed port names
 const PORT_NAMES = [
@@ -169,8 +172,8 @@ function createInitialState(): GameState {
             baseGoldProduction: Math.floor(Math.random() * 100) + 150, // base 150-250 gold per tick
             baseGoodsProduction: Math.floor(Math.random() * 30) + 50,  // base 50-80 goods per tick
             buildQueue: [],
-            gold: isNPC ? Math.floor(Math.random() * 2000) + 1500 : 0,
-            goods: isNPC ? Math.floor(Math.random() * 800) + 500 : 0
+            gold: isNPC ? Math.floor(Math.random() * 4000) + 3500 : 0,
+            goods: isNPC ? Math.floor(Math.random() * 1500) + 1000 : 0
           };
           
           nameIndex++;
@@ -201,6 +204,7 @@ function createInitialState(): GameState {
     roundLimitTicks: 2000,
     tickSpeedMode: 'normal',
     forum: [],
+    directMessages: [],
     isPaused: false
   };
 }
@@ -223,6 +227,7 @@ async function loadStateFromFirestore(forceCheck = false) {
     if (doc.exists) {
       state = doc.data() as GameState;
       if (!state.forum) state.forum = [];
+      if (!state.directMessages) state.directMessages = [];
       if (state.isPaused === undefined) state.isPaused = false;
       if (!state.scoutReports) state.scoutReports = [];
       if (!state.campaigns) state.campaigns = [];
@@ -1242,8 +1247,12 @@ app.post('/api/auth/register', (req, res) => {
   }
   const name = username.trim();
 
-  if (!email || typeof email !== 'string' || !email.includes('@')) {
-    return res.status(400).json({ error: 'A valid email address is required for password recovery' });
+  let recoveryEmail = '';
+  if (email && typeof email === 'string' && email.trim().length > 0) {
+    if (!email.includes('@')) {
+      return res.status(400).json({ error: 'A valid email address is required if you provide one' });
+    }
+    recoveryEmail = email.trim().toLowerCase();
   }
 
   if (!password || typeof password !== 'string' || password.length < 4) {
@@ -1307,7 +1316,7 @@ app.post('/api/auth/register', (req, res) => {
   state.authStore[name.toLowerCase()] = {
     passwordHash,
     salt,
-    email: email.trim().toLowerCase()
+    email: recoveryEmail
   };
   
   state.news.push({
@@ -1432,7 +1441,25 @@ app.get('/api/game/state', (req, res) => {
     }
   }
 
-  res.json(state);
+  // Direct message security filtering
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  const player = token ? state.players[token] : null;
+
+  if (player) {
+    const filteredDMs = (state.directMessages || []).filter(
+      dm => dm.senderId === player.id || dm.receiverId === player.id
+    );
+    res.json({
+      ...state,
+      directMessages: filteredDMs
+    });
+  } else {
+    res.json({
+      ...state,
+      directMessages: []
+    });
+  }
 });
 
 // Port Economy Command APIs
@@ -2152,6 +2179,8 @@ app.post('/api/game/restart-npcs', (req, res) => {
       port.scoutCount = 0;
       port.buildQueue = [];
       port.razedTicksRemaining = 0;
+      port.gold = Math.floor(Math.random() * 4000) + 3500;
+      port.goods = Math.floor(Math.random() * 1500) + 1000;
       resetCount++;
     }
   });
@@ -2235,6 +2264,44 @@ app.post('/api/forum/post/:postId/reply', authenticateToken, (req, res) => {
   saveDb();
 
   res.json({ success: true, reply: newReply });
+});
+
+// Send Direct Message
+app.post('/api/messages/send', authenticateToken, (req, res) => {
+  const player = (req as any).player;
+  const { receiverId, content } = req.body;
+
+  if (!receiverId || typeof receiverId !== 'string') {
+    return res.status(400).json({ error: 'Receiver ID is required' });
+  }
+  if (!content || typeof content !== 'string' || content.trim().length === 0) {
+    return res.status(400).json({ error: 'Message content cannot be empty' });
+  }
+
+  const receiver = state.players[receiverId];
+  if (!receiver) {
+    return res.status(404).json({ error: 'Recipient pirate not found in these waters' });
+  }
+
+  const newDM = {
+    id: `dm_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+    senderId: player.id,
+    senderName: player.username,
+    senderFlagId: player.flagId,
+    senderFlagColor: player.flagColor,
+    receiverId: receiver.id,
+    receiverName: receiver.username,
+    content: content.trim(),
+    timestamp: new Date().toISOString()
+  };
+
+  if (!state.directMessages) {
+    state.directMessages = [];
+  }
+  state.directMessages.push(newDM);
+  saveDb();
+
+  res.json({ success: true, message: newDM });
 });
 
 // Root routing and static file serving

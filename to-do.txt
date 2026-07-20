@@ -1,0 +1,13 @@
+Pircay-Lunacy-To-Do
+
+Poista developer sandbox
+
+Käännä englanniksi peli-aika boxi
+
+Lisää viestittely ominaisuus pelaajien kesken
+
+Tee ohje, jossa kerrotaan mitä pelissä voi tehdä. Ja pelin tavoitteet. Ja vaikka lyhyt tutoriaali, missä kerrotaan miten päästä alkuun (rakentaa laiva, värvätä miehistö, ostaa tykki, värvätä scoutti, scoutata ja kuinka tehdä plunder)
+
+Tee sähköpostista vain optio, ei pakollinen.
+
+

@@ -118,6 +118,18 @@ export interface ForumReply {
   timestamp: string;
 }
 
+export interface DirectMessage {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderFlagId: number;
+  senderFlagColor: string;
+  receiverId: string;
+  receiverName: string;
+  content: string;
+  timestamp: string;
+}
+
 export interface ForumPost {
   id: string;
   senderId: string;
@@ -143,6 +155,7 @@ export interface GameState {
   roundLimitTicks?: number;
   tickSpeedMode: 'normal' | 'fast' | 'debug'; // normal = 15m, fast = 30s, debug = 5m
   forum?: ForumPost[];
+  directMessages?: DirectMessage[];
   isPaused?: boolean;
   authStore?: Record<string, { passwordHash: string; salt: string; email: string }>;
 }
