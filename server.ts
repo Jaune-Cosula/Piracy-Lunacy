@@ -38,8 +38,8 @@ try {
   console.error('Error reading firebase-applet-config.json:', e);
 }
 
-const projectId = process.env.FIREBASE_PROJECT_ID || firebaseConfig?.projectId || 'calcium-form-07c1c';
-const firestoreDatabaseId = process.env.FIRESTORE_DATABASE_ID || firebaseConfig?.firestoreDatabaseId || 'ai-studio-piracylunacy-bc3f1352-8aa3-4eca-8753-19c9d8a3d910';
+let projectId = process.env.FIREBASE_PROJECT_ID || firebaseConfig?.projectId || 'calcium-form-07c1c';
+let firestoreDatabaseId = process.env.FIRESTORE_DATABASE_ID || firebaseConfig?.firestoreDatabaseId || 'ai-studio-piracylunacy-bc3f1352-8aa3-4eca-8753-19c9d8a3d910';
 
 const adminConfig: any = {
   projectId: projectId
@@ -67,6 +67,20 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
 
       if (parsedCreds) {
         adminConfig.credential = cert(parsedCreds);
+        if (parsedCreds.project_id) {
+          projectId = parsedCreds.project_id;
+          adminConfig.projectId = projectId;
+          console.log(`Overriding Project ID from service account credentials: ${projectId}`);
+        }
+        
+        // If a service account is provided, we are deploying to an external platform (e.g., Render)
+        // using a personal Firebase project. We should default to the '(default)' database
+        // unless a custom database ID is explicitly provided via environment variables.
+        if (!process.env.FIRESTORE_DATABASE_ID) {
+          firestoreDatabaseId = '(default)';
+          console.log('External deployment detected with service account. Defaulting Firestore database to (default).');
+        }
+        
         console.log('Firebase Admin initialized successfully using FIREBASE_SERVICE_ACCOUNT.');
       } else {
         console.warn('FIREBASE_SERVICE_ACCOUNT was provided but does not appear to be a valid JSON object or Base64-encoded JSON. Please make sure to copy the entire JSON content of your service account file.');
