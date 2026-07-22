@@ -91,12 +91,27 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
   }
 }
 
-const firebaseApp = initializeApp(adminConfig);
+const useFirebase = process.env.DISABLE_FIREBASE !== 'true';
 
-// If database ID is 'default' or '(default)', use the default database. Otherwise, use the specified database ID.
-const db = (firestoreDatabaseId && firestoreDatabaseId !== 'default' && firestoreDatabaseId !== '(default)')
-  ? getFirestore(firebaseApp, firestoreDatabaseId)
-  : getFirestore(firebaseApp);
+let firebaseApp: any = null;
+let db: any = null;
+
+if (useFirebase) {
+  try {
+    firebaseApp = initializeApp(adminConfig);
+
+    // If database ID is 'default' or '(default)', use the default database. Otherwise, use the specified database ID.
+    db = (firestoreDatabaseId && firestoreDatabaseId !== 'default' && firestoreDatabaseId !== '(default)')
+      ? getFirestore(firebaseApp, firestoreDatabaseId)
+      : getFirestore(firebaseApp);
+    console.log('Firebase initialized.');
+  } catch (err: any) {
+    console.error('Failed to initialize Firebase Admin, falling back to local only:', err.message || err);
+    db = null;
+  }
+} else {
+  console.log('Running in local-only mode (Firebase disabled via DISABLE_FIREBASE).');
+}
 
 // List of pirate-themed port names
 const PORT_NAMES = [
@@ -225,11 +240,49 @@ function createInitialState(): GameState {
 
 let state: GameState = createInitialState();
 let isStateLoaded = false;
-let isFirestoreAvailable = true;
+let isFirestoreAvailable = process.env.DISABLE_FIREBASE !== 'true' && db !== null;
 let lastFirestoreCheck = 0;
 const FIRESTORE_RETRY_INTERVAL = 60000; // 1 minute
 
 async function loadStateFromFirestore(forceCheck = false) {
+  // If running in local-only mode (Firebase disabled or initialization failed), bypass Firestore completely
+  if (process.env.DISABLE_FIREBASE === 'true' || !db) {
+    if (isStateLoaded) return;
+    
+    try {
+      if (fs.existsSync(DB_FILE)) {
+        const loadedState = JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
+        if (loadedState && typeof loadedState === 'object' && loadedState.ports) {
+          state = loadedState;
+          if (!state.forum) state.forum = [];
+          if (!state.directMessages) state.directMessages = [];
+          if (state.isPaused === undefined) state.isPaused = false;
+          if (!state.scoutReports) state.scoutReports = [];
+          if (!state.campaigns) state.campaigns = [];
+          if (!state.tradeRoutes) state.tradeRoutes = [];
+          if (!state.news) state.news = [];
+          if (!state.authStore) state.authStore = {};
+          if (!state.gameStartTime) state.gameStartTime = new Date().toISOString();
+          if (!state.roundLimitTicks) state.roundLimitTicks = 2000;
+          Object.values(state.ports).forEach(p => {
+            if (!p.buildQueue) p.buildQueue = [];
+          });
+          isStateLoaded = true;
+          console.log('Successfully loaded local state from piracy_db.json (Firebase disabled/unavailable)');
+        }
+      } else {
+        console.log('No local piracy_db.json file found and Firebase is disabled/unavailable. Initializing new local game state...');
+        state = createInitialState();
+        fs.writeFileSync(DB_FILE, JSON.stringify(state, null, 2), 'utf-8');
+        isStateLoaded = true;
+        console.log('Successfully initialized and saved brand new piracy_db.json local database!');
+      }
+    } catch (fileErr) {
+      console.error('Failed to load local game database:', fileErr);
+    }
+    return;
+  }
+
   const now = Date.now();
   if (!isFirestoreAvailable && !forceCheck && (now - lastFirestoreCheck < FIRESTORE_RETRY_INTERVAL)) {
     return;
@@ -278,6 +331,7 @@ async function loadStateFromFirestore(forceCheck = false) {
         if (loadedState && typeof loadedState === 'object' && loadedState.ports) {
           state = loadedState;
           if (!state.forum) state.forum = [];
+          if (!state.directMessages) state.directMessages = [];
           if (state.isPaused === undefined) state.isPaused = false;
           if (!state.scoutReports) state.scoutReports = [];
           if (!state.campaigns) state.campaigns = [];
@@ -294,9 +348,12 @@ async function loadStateFromFirestore(forceCheck = false) {
         }
       } else {
         // No local database file exists, and Firestore failed.
-        // We will NOT set isStateLoaded to true because we didn't load a valid state.
-        // This prevents overwriting the cloud database with an empty initial state if we subsequently write.
-        console.warn('No local fallback file found, database load is incomplete.');
+        // We will initialize a local game state to prevent stalling/errors, but issue a warning.
+        console.warn('No local fallback file found, and Firestore connection failed. Automatically initializing a local-only game state to allow playing...');
+        state = createInitialState();
+        fs.writeFileSync(DB_FILE, JSON.stringify(state, null, 2), 'utf-8');
+        isStateLoaded = true;
+        console.log(`Created and saved initial local state to ${DB_FILE}`);
       }
     } catch (fileErr) {
       console.error('File fallback load failed:', fileErr);
