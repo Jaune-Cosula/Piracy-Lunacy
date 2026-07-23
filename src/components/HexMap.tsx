@@ -83,18 +83,15 @@ export const HexMap: React.FC<HexMapProps> = ({
       const originCoords = hexToPixel(originPort.q, originPort.r);
       const targetCoords = hexToPixel(targetPort.q, targetPort.r);
 
-      // Interpolate current position based on ticksRemaining
-      // totalDuration = 18. Ticks left: 18 (just left origin) down to 0 (returned).
-      // If moving (ticks 18 to 12): progress goes from 0% (at 18) to 100% (at 12)
-      // If battling (ticks 12 to 6): progress is 100% (at target)
-      // If returning (ticks 6 to 0): progress goes from 100% (at 6) to 0% (at 0)
-      let t = 1.0; // default at target
-      if (camp.ticksRemaining > 12) {
-        // Moving to target: (18 - ticksRemaining) / 6
-        t = (18 - camp.ticksRemaining) / 6;
-      } else if (camp.ticksRemaining < 6) {
-        // Returning: ticksRemaining / 6
-        t = camp.ticksRemaining / 6;
+      // Interpolate current position based on campaign status & ticksRemaining
+      let t = 1.0; // default at target port (battling)
+      if (camp.status === 'moving') {
+        const moveTicks = camp.totalDuration === 11 ? 4 : Math.round(camp.totalDuration * 0.4);
+        const elapsed = camp.totalDuration - camp.ticksRemaining;
+        t = Math.min(1.0, Math.max(0.0, elapsed / Math.max(1, moveTicks)));
+      } else if (camp.status === 'returning') {
+        const returnTicks = camp.totalDuration === 11 ? 4 : Math.round(camp.totalDuration * 0.4);
+        t = Math.min(1.0, Math.max(0.0, camp.ticksRemaining / Math.max(1, returnTicks)));
       }
 
       const currX = originCoords.x + t * (targetCoords.x - originCoords.x);

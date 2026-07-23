@@ -63,7 +63,7 @@ export interface FleetCampaign {
   targetPortName: string;
   type: 'attack_conquer' | 'attack_loot' | 'attack_raze' | 'scout' | 'transfer';
   status: 'moving' | 'battling' | 'returning';
-  ticksRemaining: number; // starts at 18 for attack (6 move, 6 battle, 6 return) or 6 for scout
+  ticksRemaining: number; // starts at 11 for attack (4 move, 3 battle, 4 return) or 2 for scout
   totalDuration: number;
   sloop: number;
   schooner: number;

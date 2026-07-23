@@ -50,6 +50,11 @@ export const Forum: React.FC<ForumProps> = ({
   const posts = gameState.forum || [];
   const activePost = posts.find(p => p.id === activePostId);
 
+  const totalTavernMessages = posts.reduce((acc, p) => acc + 1 + (p.replies ? p.replies.length : 0), 0);
+  const totalDirectWhispers = (gameState.directMessages || []).filter(
+    dm => dm.senderId === player.id || dm.receiverId === player.id
+  ).length;
+
   // Filter other active players to send direct messages to
   const otherPlayers = (Object.values(gameState.players) as Player[]).filter(p => p.id !== player.id);
   const selectedRecipient = otherPlayers.find(p => p.id === selectedRecipientId) as Player | undefined;
@@ -211,7 +216,7 @@ export const Forum: React.FC<ForumProps> = ({
                 : 'text-slate-400 hover:text-white'
             }`}
           >
-            TAVERN BOARD
+            TAVERN BOARD ({totalTavernMessages})
           </button>
           <button
             onClick={() => {
@@ -225,7 +230,7 @@ export const Forum: React.FC<ForumProps> = ({
                 : 'text-slate-400 hover:text-white'
             }`}
           >
-            DIRECT WHISPERS
+            DIRECT WHISPERS ({totalDirectWhispers})
           </button>
         </div>
       </div>

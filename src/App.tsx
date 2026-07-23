@@ -59,6 +59,32 @@ export default function App() {
   // Time-to-next-tick state
   const [secondsToNextTick, setSecondsToNextTick] = useState<number>(0);
 
+  // Track last seen forum message count
+  const [lastSeenForumCount, setLastSeenForumCount] = useState<number>(() => {
+    const saved = localStorage.getItem('piracy_last_seen_forum');
+    return saved !== null ? parseInt(saved, 10) : 0;
+  });
+
+  // Calculate total forum messages (posts + replies + direct messages)
+  const totalForumCount = useMemo(() => {
+    if (!gameState) return 0;
+    const forumPosts = gameState.forum || [];
+    const postsAndReplies = forumPosts.reduce((acc, p) => acc + 1 + (p.replies ? p.replies.length : 0), 0);
+    const dms = gameState.directMessages || [];
+    const playerDMs = player ? dms.filter(m => m.senderId === player.id || m.receiverId === player.id) : dms;
+    return postsAndReplies + playerDMs.length;
+  }, [gameState, player]);
+
+  const unreadForumCount = Math.max(0, totalForumCount - lastSeenForumCount);
+
+  // Clear unread indicator when user views the 'forum' tab
+  useEffect(() => {
+    if (activeTab === 'forum' && totalForumCount !== lastSeenForumCount) {
+      setLastSeenForumCount(totalForumCount);
+      localStorage.setItem('piracy_last_seen_forum', totalForumCount.toString());
+    }
+  }, [activeTab, totalForumCount, lastSeenForumCount]);
+
   // Poll full game state
   const fetchGameState = async () => {
     try {
@@ -291,40 +317,68 @@ export default function App() {
     await fetchGameState();
   };
 
-  // Sandbox overrides
-  const handleManualTick = async () => {
-    const res = await fetch('/api/game/dev-tick', { method: 'POST' });
+  // Sandbox overrides (Admin Protected)
+  const handleManualTick = async (adminKey?: string) => {
+    const key = adminKey || localStorage.getItem('piracy_admin_key') || '';
+    const res = await fetch('/api/game/dev-tick', { 
+      method: 'POST',
+      headers: { 'x-admin-key': key }
+    });
     if (res.ok) {
       await fetchGameState();
+    } else {
+      const err = await res.json();
+      throw new Error(err.error || 'Tikityksen ajaminen epäonnistui');
     }
   };
 
-  const handleChangeSpeed = async (mode: 'normal' | 'fast' | 'debug') => {
+  const handleChangeSpeed = async (mode: 'normal' | 'fast' | 'debug', adminKey?: string) => {
+    const key = adminKey || localStorage.getItem('piracy_admin_key') || '';
     const res = await fetch('/api/game/dev-speed', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-admin-key': key 
+      },
       body: JSON.stringify({ mode })
     });
     if (res.ok) {
       await fetchGameState();
+    } else {
+      const err = await res.json();
+      throw new Error(err.error || 'Nopeuden muutos epäonnistui');
     }
   };
 
-  const handleRestartNPCs = async () => {
-    const res = await fetch('/api/game/restart-npcs', { method: 'POST' });
+  const handleRestartNPCs = async (adminKey?: string) => {
+    const key = adminKey || localStorage.getItem('piracy_admin_key') || '';
+    const res = await fetch('/api/game/restart-npcs', { 
+      method: 'POST',
+      headers: { 'x-admin-key': key }
+    });
     if (res.ok) {
       await fetchGameState();
+    } else {
+      const err = await res.json();
+      throw new Error(err.error || 'NPC-alueiden nollaus epäonnistui');
     }
   };
 
-  const handleTogglePause = async (pause: boolean) => {
+  const handleTogglePause = async (pause: boolean, adminKey?: string) => {
+    const key = adminKey || localStorage.getItem('piracy_admin_key') || '';
     const res = await fetch('/api/game/dev-pause', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        'x-admin-key': key 
+      },
       body: JSON.stringify({ pause })
     });
     if (res.ok) {
       await fetchGameState();
+    } else {
+      const err = await res.json();
+      throw new Error(err.error || 'Pelin tauotus epäonnistui');
     }
   };
 
@@ -589,13 +643,28 @@ export default function App() {
 
             <button
               onClick={() => setActiveTab('forum')}
-              className={`w-full py-3 px-4 font-mono font-bold text-xs tracking-wider transition-all rounded-2xl flex items-center gap-3 ${
+              className={`w-full py-3 px-4 font-mono font-bold text-xs tracking-wider transition-all rounded-2xl flex items-center justify-between gap-2 ${
                 activeTab === 'forum' 
                   ? 'bg-rose-500/10 border border-rose-500/30 text-white shadow-lg' 
                   : 'border border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-950/40'
               }`}
             >
-              <MessageSquare className="w-4 h-4 text-amber-500" /> Tavern & Council
+              <div className="flex items-center gap-3 min-w-0 truncate">
+                <MessageSquare className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                <span className="truncate">Tavern & Council</span>
+              </div>
+
+              {totalForumCount > 0 && (
+                unreadForumCount > 0 ? (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/40 font-bold flex-shrink-0 animate-pulse">
+                    {totalForumCount} ({unreadForumCount} uutta)
+                  </span>
+                ) : (
+                  <span className="text-[11px] text-slate-500 font-normal flex-shrink-0">
+                    ({totalForumCount})
+                  </span>
+                )
+              )}
             </button>
           </div>
 

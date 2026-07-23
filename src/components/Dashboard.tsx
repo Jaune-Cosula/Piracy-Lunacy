@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { GamePort, Player, SHIP_CONFIGS, COST_TROOP, COST_CANNON, COST_SCOUT, COST_GOVERNOR, COST_FORTIFICATION, TradeRoute } from '../types.ts';
 import { 
   DollarSign, 
@@ -59,6 +59,22 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   // Active trade routes owned by player
   const activeRoutes = tradeRoutes.filter(r => r.ownerId === player.id);
+
+  const maxCrewCapacity = useMemo(() => {
+    if (!selectedPort) return 0;
+    return (selectedPort.sloop * SHIP_CONFIGS.sloop.crewCapacity) +
+           (selectedPort.schooner * SHIP_CONFIGS.schooner.crewCapacity) +
+           (selectedPort.frigate * SHIP_CONFIGS.frigate.crewCapacity) +
+           (selectedPort.galleon * SHIP_CONFIGS.galleon.crewCapacity);
+  }, [selectedPort]);
+
+  const maxCannonCapacity = useMemo(() => {
+    if (!selectedPort) return 0;
+    return (selectedPort.sloop * SHIP_CONFIGS.sloop.cannonCapacity) +
+           (selectedPort.schooner * SHIP_CONFIGS.schooner.cannonCapacity) +
+           (selectedPort.frigate * SHIP_CONFIGS.frigate.cannonCapacity) +
+           (selectedPort.galleon * SHIP_CONFIGS.galleon.cannonCapacity);
+  }, [selectedPort]);
 
   const handleAction = async (actionFn: () => Promise<void>) => {
     setErrorMsg(null);
@@ -230,11 +246,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <div className="grid grid-cols-2 sm:grid-cols-6 gap-3 mb-4">
                 <div className="bg-neutral-950 p-2.5 rounded-lg border border-neutral-800 text-center">
                   <div className="text-lg font-bold font-mono text-white">{selectedPort.troops}</div>
-                  <div className="text-[9px] font-mono text-neutral-400">Pirate Crew</div>
+                  <div className="text-[9px] font-mono text-neutral-400">Pirate Crew (Cap: {maxCrewCapacity})</div>
                 </div>
                 <div className="bg-neutral-950 p-2.5 rounded-lg border border-neutral-800 text-center">
                   <div className="text-lg font-bold font-mono text-white">{selectedPort.cannons}</div>
-                  <div className="text-[9px] font-mono text-neutral-400">Cannons</div>
+                  <div className="text-[9px] font-mono text-neutral-400">Cannons (Cap: {maxCannonCapacity})</div>
                 </div>
                 <div className="bg-neutral-950 p-2.5 rounded-lg border border-neutral-800 text-center">
                   <div className="text-lg font-bold font-mono text-white">{selectedPort.governors}</div>
@@ -359,7 +375,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <div className="flex items-center justify-between gap-3 p-2 bg-neutral-950 rounded border border-neutral-800">
                     <div>
                       <div className="font-bold text-neutral-200">Pirate Crew (Troops)</div>
-                      <div className="text-[10px] text-neutral-400">Cost: {COST_TROOP} Gold | Upkeep: 1G/tick</div>
+                      <div className="text-[10px] text-neutral-400">Cost: {COST_TROOP} Gold | Upkeep: 1G/tick | Ship Capacity: {maxCrewCapacity}</div>
                     </div>
                     <div className="flex items-center gap-2">
                       <input 
@@ -382,7 +398,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <div className="flex items-center justify-between gap-3 p-2 bg-neutral-950 rounded border border-neutral-800">
                     <div>
                       <div className="font-bold text-neutral-200">Artillery (Cannons)</div>
-                      <div className="text-[10px] text-neutral-400">Cost: {COST_CANNON} Gold | Heavy defences</div>
+                      <div className="text-[10px] text-neutral-400">Cost: {COST_CANNON} Gold | Heavy defences | Ship Capacity: {maxCannonCapacity}</div>
                     </div>
                     <div className="flex items-center gap-2">
                       <input 

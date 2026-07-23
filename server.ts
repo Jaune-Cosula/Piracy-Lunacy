@@ -26,6 +26,31 @@ import {
 // PORT is hardcoded by the infrastructure to 3000
 const PORT = 3000;
 const DB_FILE = path.join(process.cwd(), 'piracy_db.json');
+const HISTORY_FILE = path.join(process.cwd(), 'round_history.json');
+
+function appendToHistory(newsItems: NewsItem[]) {
+  if (!newsItems || newsItems.length === 0) return;
+
+  try {
+    let history: NewsItem[] = [];
+    if (fs.existsSync(HISTORY_FILE)) {
+      const fileContent = fs.readFileSync(HISTORY_FILE, 'utf-8').trim();
+      if (fileContent) {
+        history = JSON.parse(fileContent);
+      }
+    }
+
+    const existingIds = new Set(history.map(item => item.id));
+    const newItems = newsItems.filter(item => item.id && !existingIds.has(item.id));
+
+    if (newItems.length > 0) {
+      history.push(...newItems);
+      fs.writeFileSync(HISTORY_FILE, JSON.stringify(history, null, 2), 'utf-8');
+    }
+  } catch (err) {
+    console.error('Error writing round history to disk:', err);
+  }
+}
 
 // Load Firebase configuration
 let firebaseConfig: any = null;
@@ -599,8 +624,8 @@ export function processGameTick() {
         campaignsToComplete.push(c.id);
       }
     } else if (c.type !== 'scout') {
-      // Standard Attack Transition (14 Ticks Total: 4 move, 5 battle, 5 return)
-      if (c.ticksRemaining === 10) {
+      // Standard Attack Transition (11 Ticks Total: 4 move, 3 battle, 4 return)
+      if (c.ticksRemaining === 7) {
         // Battle starts! Set state to battling
         c.status = 'battling';
         const targetPort = state.ports[c.targetPortId];
@@ -608,12 +633,12 @@ export function processGameTick() {
           id: `battle_start_${c.id}`,
           tick: state.currentTick,
           type: 'battle',
-          message: `BATTLE IN PROGRESS: ${c.senderName}'s fleet has engaged defences at Port ${c.targetPortName}! Conflict will rage for 5 ticks (75 mins).`,
+          message: `BATTLE IN PROGRESS: ${c.senderName}'s fleet has engaged defences at Port ${c.targetPortName}! Conflict will rage for 3 ticks (45 mins).`,
           timestamp: new Date().toISOString(),
           senderPlayerId: c.senderId,
           targetPlayerId: targetPort ? (targetPort.ownerId || undefined) : undefined
         });
-      } else if (c.ticksRemaining === 5) {
+      } else if (c.ticksRemaining === 4) {
         // Battle finishes! Resolve and return
         c.status = 'returning';
         resolveBattle(c);
@@ -793,6 +818,16 @@ export function processGameTick() {
   // Calculate new leader scores
   calculateScores();
   
+  // Append new news items to persistent round history log on disk
+  if (state.news && state.news.length > 0) {
+    appendToHistory(state.news);
+  }
+
+  // Keep state.news in RAM trimmed to last 100 items for high performance
+  if (state.news && state.news.length > 100) {
+    state.news = state.news.slice(-100);
+  }
+
   // Save updated state
   saveDb();
 }
@@ -1786,7 +1821,7 @@ app.post('/api/game/attack', authenticateToken, (req, res) => {
   originPort.cannons -= c;
   originPort.governors -= gov;
 
-  // Create Campaign (Total 14 ticks: 4 move, 5 battle, 5 return)
+  // Create Campaign (Total 11 ticks: 4 move, 3 battle, 4 return)
   const campaign: FleetCampaign = {
     id: `campaign_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
     senderId: player.id,
@@ -1799,8 +1834,8 @@ app.post('/api/game/attack', authenticateToken, (req, res) => {
     targetPortName: targetPort.name,
     type: type as any,
     status: 'moving',
-    ticksRemaining: 14,
-    totalDuration: 14,
+    ticksRemaining: 11,
+    totalDuration: 11,
     sloop: s,
     schooner: sc,
     frigate: f,
@@ -2077,15 +2112,33 @@ app.post('/api/game/trade/cancel', authenticateToken, (req, res) => {
   res.json({ success: true, message: `Trade route dissolved and the ${route.shipType} was returned to ${port ? port.name : 'garrison'}.` });
 });
 
+// Admin / Developer Passcode Authentication Middleware
+const ADMIN_SECRET = process.env.ADMIN_SECRET || 'pirate-admin-1234';
+
+function authenticateAdmin(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const authHeader = req.headers['x-admin-key'] || req.headers['authorization'] || req.body?.adminKey || req.query?.adminKey;
+  const providedKey = typeof authHeader === 'string' ? authHeader.replace(/^Bearer\s+/i, '').trim() : '';
+
+  if (providedKey && providedKey === ADMIN_SECRET) {
+    return next();
+  }
+  return res.status(401).json({ error: 'Luvaton pääsy! Virheellinen ylläpitäjän salasana (Admin Key).' });
+}
+
+// Verify Admin Passcode Endpoint
+app.post('/api/game/admin-verify', authenticateAdmin, (req, res) => {
+  res.json({ success: true, message: 'Ylläpitäjän salasana vahvistettu oikeaksi!' });
+});
+
 // Dev manual ticks / speed-run triggers
-app.post('/api/game/dev-tick', (req, res) => {
+app.post('/api/game/dev-tick', authenticateAdmin, (req, res) => {
   processGameTick();
   saveDb();
   res.json({ success: true, message: `Advanced 1 game tick! Current Tick: ${state.currentTick}`, state });
 });
 
 // Set tick speed mode
-app.post('/api/game/dev-speed', (req, res) => {
+app.post('/api/game/dev-speed', authenticateAdmin, (req, res) => {
   const { mode } = req.body; // 'normal' | 'fast' | 'debug'
   if (mode === 'normal' || mode === 'fast' || mode === 'debug') {
     state.tickSpeedMode = mode;
@@ -2100,7 +2153,7 @@ app.post('/api/game/dev-speed', (req, res) => {
 });
 
 // Pause Game Loop Toggle
-app.post('/api/game/dev-pause', (req, res) => {
+app.post('/api/game/dev-pause', authenticateAdmin, (req, res) => {
   const { pause } = req.body; // boolean
   state.isPaused = !!pause;
   if (state.isPaused) {
@@ -2114,8 +2167,25 @@ app.post('/api/game/dev-pause', (req, res) => {
   });
 });
 
+// Fetch entire round chronicle / history log
+app.get('/api/game/history', (req, res) => {
+  try {
+    if (fs.existsSync(HISTORY_FILE)) {
+      const fileContent = fs.readFileSync(HISTORY_FILE, 'utf-8').trim();
+      if (fileContent) {
+        const history = JSON.parse(fileContent);
+        return res.json(history);
+      }
+    }
+    return res.json(state.news || []);
+  } catch (err) {
+    console.error('Failed to read round history:', err);
+    res.status(500).json({ error: 'Historian lukeminen epäonnistui' });
+  }
+});
+
 // Reset Round API (Wipes the map and restarts the round, but preserves player login/registrations)
-app.post('/api/game/dev-reset-round', (req, res) => {
+app.post('/api/game/dev-reset-round', authenticateAdmin, (req, res) => {
   const freshState = createInitialState();
   const playersToKeep = { ...state.players };
   
@@ -2172,19 +2242,31 @@ app.post('/api/game/dev-reset-round', (req, res) => {
     }
   ];
 
+  // Archive old round history file if present, and write new initial history
+  try {
+    if (fs.existsSync(HISTORY_FILE)) {
+      const archiveName = path.join(process.cwd(), `history_archive_${Date.now()}.json`);
+      fs.renameSync(HISTORY_FILE, archiveName);
+      console.log(`Archived previous round history to ${archiveName}`);
+    }
+    fs.writeFileSync(HISTORY_FILE, JSON.stringify(state.news, null, 2), 'utf-8');
+  } catch (histErr) {
+    console.error('Failed to archive round history:', histErr);
+  }
+
   saveDb();
   res.json({ success: true, message: 'Game round has been successfully reset! All islands cleared, players redistributed, and clock set to tick 1.', state });
 });
 
 // Download Game State Backup JSON
-app.get('/api/game/dev-backup', (req, res) => {
+app.get('/api/game/dev-backup', authenticateAdmin, (req, res) => {
   res.setHeader('Content-Disposition', 'attachment; filename=piracy_lunacy_backup.json');
   res.setHeader('Content-Type', 'application/json');
   res.send(JSON.stringify(state, null, 2));
 });
 
 // Restore Game State from Uploaded Backup
-app.post('/api/game/dev-restore', (req, res) => {
+app.post('/api/game/dev-restore', authenticateAdmin, (req, res) => {
   const { backupData } = req.body;
   try {
     const parsed = typeof backupData === 'string' ? JSON.parse(backupData) : backupData;
@@ -2210,7 +2292,7 @@ app.post('/api/game/dev-restore', (req, res) => {
 });
 
 // Re-start NPC players/factions with weaker stats
-app.post('/api/game/restart-npcs', (req, res) => {
+app.post('/api/game/restart-npcs', authenticateAdmin, (req, res) => {
   let resetCount = 0;
   
   Object.values(state.ports).forEach(port => {
