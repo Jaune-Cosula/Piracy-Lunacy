@@ -603,9 +603,16 @@ export function processGameTick() {
 
   // Calculate Trade Route Gold Production
   // Trade routes require a Sloop or Schooner to be assigned, producing gold per route
+  // Clean up any trade routes where the owner no longer owns both ports (e.g. port captured)
+  state.tradeRoutes = state.tradeRoutes.filter(route => {
+    const portA = state.ports[route.portAId];
+    const portB = state.ports[route.portBId];
+    return route.active && portA && portB && portA.ownerId === route.ownerId && portB.ownerId === route.ownerId && state.players[route.ownerId];
+  });
+
   state.tradeRoutes.forEach(route => {
-    if (route.active && state.players[route.ownerId]) {
-      const p = state.players[route.ownerId];
+    const p = state.players[route.ownerId];
+    if (p) {
       // Schooner routes are twice as lucrative
       const tradeBonus = route.shipType === 'schooner' ? 150 : 60;
       p.gold += tradeBonus;
