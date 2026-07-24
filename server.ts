@@ -28,6 +28,24 @@ const PORT = 3000;
 const DB_FILE = path.join(process.cwd(), 'piracy_db.json');
 const HISTORY_FILE = path.join(process.cwd(), 'round_history.json');
 
+// Safety check for GOOGLE_APPLICATION_CREDENTIALS environment variable
+if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+  const gCredPath = process.env.GOOGLE_APPLICATION_CREDENTIALS.trim();
+  if (gCredPath && !fs.existsSync(gCredPath)) {
+    console.warn(`[Firebase Warning] GOOGLE_APPLICATION_CREDENTIALS specifies '${gCredPath}', but file does not exist! Clearing environment variable to prevent gRPC crashes.`);
+    delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  }
+}
+
+// Global process exception handlers to prevent background gRPC / auth errors from crashing Node process
+process.on('unhandledRejection', (reason: any) => {
+  console.warn('[Server Guard] Unhandled Rejection intercepted:', reason?.message || reason);
+});
+
+process.on('uncaughtException', (err: any) => {
+  console.error('[Server Guard] Uncaught Exception intercepted:', err?.message || err);
+});
+
 function appendToHistory(newsItems: NewsItem[]) {
   if (!newsItems || newsItems.length === 0) return;
 
@@ -2520,3 +2538,4 @@ async function startServer() {
 }
 
 startServer();
+
