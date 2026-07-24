@@ -1,13 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { FlagSymbol, FLAG_COLORS } from './FlagSymbol.tsx';
-import { Anchor, ShieldAlert, Sparkles, Swords, Compass, KeyRound, Mail, User } from 'lucide-react';
+import { Anchor, ShieldAlert, Sparkles, Swords, Compass, KeyRound, Mail, User, Ban, Check, Lock } from 'lucide-react';
+import { Player } from '../types.ts';
+import logoImg from '../assets/logo.jpg';
 
 interface AuthProps {
   onRegister: (username: string, email: string, password: string, flagId: number, flagColor: string) => Promise<void>;
   onLogin: (username: string, password: string) => Promise<void>;
+  players?: Record<string, Player>;
 }
 
-export const Auth: React.FC<AuthProps> = ({ onRegister, onLogin }) => {
+export const Auth: React.FC<AuthProps> = ({ onRegister, onLogin, players }) => {
   const [isRegister, setIsRegister] = useState(true);
   const [isForgotPassword, setIsForgotPassword] = useState(false);
   const [username, setUsername] = useState('');
@@ -15,7 +18,8 @@ export const Auth: React.FC<AuthProps> = ({ onRegister, onLogin }) => {
   const [password, setPassword] = useState('');
   const [selectedFlagId, setSelectedFlagId] = useState<number>(1);
   const [selectedColor, setSelectedColor] = useState<string>('#e11d48');
-  
+  const [fetchedPlayers, setFetchedPlayers] = useState<Record<string, Player> | null>(null);
+
   // Forgot Password fields
   const [recoveryEmail, setRecoveryEmail] = useState('');
   const [recoveryNewPassword, setRecoveryNewPassword] = useState('');
@@ -24,6 +28,38 @@ export const Auth: React.FC<AuthProps> = ({ onRegister, onLogin }) => {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [recoverySuccessMsg, setRecoverySuccessMsg] = useState<string | null>(null);
+
+  // Fetch state if players prop wasn't available
+  useEffect(() => {
+    if (!players) {
+      fetch('/api/game/state')
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.players) {
+            setFetchedPlayers(data.players);
+          }
+        })
+        .catch(err => console.error('Failed to load players for flag checks:', err));
+    }
+  }, [players]);
+
+  const activePlayers = players || fetchedPlayers || {};
+
+  // Map of claimed flag combinations: "flagId_colorHex" -> username
+  const claimedFlagsMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    Object.values(activePlayers).forEach((p: Player) => {
+      if (p.flagId && p.flagColor) {
+        const key = `${p.flagId}_${p.flagColor.toLowerCase()}`;
+        map[key] = p.username;
+      }
+    });
+    return map;
+  }, [activePlayers]);
+
+  const currentKey = `${selectedFlagId}_${selectedColor.toLowerCase()}`;
+  const isCurrentCombinationClaimed = Boolean(claimedFlagsMap[currentKey]);
+  const currentClaimedUser = claimedFlagsMap[currentKey];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -60,8 +96,9 @@ export const Auth: React.FC<AuthProps> = ({ onRegister, onLogin }) => {
             newPassword: recoveryNewPassword
           })
         });
-        const data = await res.json();
-        if (res.ok) {
+        const contentType = res.headers.get('content-type') || '';
+        if (res.ok && contentType.includes('application/json')) {
+          const data = await res.json();
           setRecoverySuccessMsg('Arrr! Password reset successfully, Captain! You can now log in.');
           setIsForgotPassword(false);
           // Reset fields
@@ -70,7 +107,12 @@ export const Auth: React.FC<AuthProps> = ({ onRegister, onLogin }) => {
           setRecoveryConfirmPassword('');
           setPassword('');
         } else {
-          setErrorMsg(data.error || 'Failed to recover password.');
+          let errText = 'Failed to recover password.';
+          if (contentType.includes('application/json')) {
+            const data = await res.json();
+            errText = data.error || errText;
+          }
+          setErrorMsg(errText);
         }
       } catch (err: any) {
         setErrorMsg(err.message || 'Verification failed!');
@@ -82,6 +124,10 @@ export const Auth: React.FC<AuthProps> = ({ onRegister, onLogin }) => {
 
     // Normal Register/Login flow
     if (isRegister) {
+      if (isCurrentCombinationClaimed) {
+        setErrorMsg(`Tämä lippu- ja väriyhdistelmä on jo varattu kapteenille ${currentClaimedUser}! Valitse toinen lippu tai väri.`);
+        return;
+      }
       if (email.trim().length > 0 && !email.includes('@')) {
         setErrorMsg('Please enter a valid email address containing @.');
         return;
@@ -132,8 +178,13 @@ export const Auth: React.FC<AuthProps> = ({ onRegister, onLogin }) => {
 
         {/* Title branding */}
         <div className="text-center space-y-2 mb-6">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-rose-500/10 border border-rose-500/20 mb-1">
-            <Swords className="w-7 h-7 text-rose-500 animate-pulse" />
+          <div className="inline-flex items-center justify-center mb-1">
+            <img 
+              src={logoImg} 
+              alt="Piracy Lunacy Logo" 
+              className="w-28 h-28 sm:w-36 sm:h-36 object-contain rounded-full border-2 border-rose-500/30 shadow-2xl bg-slate-950 p-1 hover:scale-105 transition-transform duration-300"
+              referrerPolicy="no-referrer"
+            />
           </div>
           <h1 className="text-2xl md:text-3xl font-extrabold tracking-widest text-white font-sans">
             PIRACY LUNACY
@@ -270,29 +321,55 @@ export const Auth: React.FC<AuthProps> = ({ onRegister, onLogin }) => {
               <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-center">
                 
                 {/* Real-time Flag Preview */}
-                <div className="md:col-span-4 bg-slate-950 p-4 rounded-2xl border border-slate-850 text-center flex flex-col items-center justify-center h-full">
+                <div className="md:col-span-4 bg-slate-950 p-4 rounded-2xl border border-slate-850 text-center flex flex-col items-center justify-center h-full relative">
                   <span className="text-[9px] text-slate-500 mb-2 font-bold block">FLAG BLUEPRINT</span>
                   <FlagSymbol flagId={selectedFlagId} color={selectedColor} size="lg" />
                   <span className="text-[9px] text-slate-500 mt-2">Flag Option #{selectedFlagId}</span>
+
+                  {isCurrentCombinationClaimed ? (
+                    <div className="mt-2 text-[9px] font-bold text-rose-300 bg-rose-950/80 border border-rose-500/40 px-2 py-1 rounded-lg flex items-center justify-center gap-1 leading-tight">
+                      <Ban className="w-3 h-3 text-rose-400 flex-shrink-0" />
+                      <span>VARATTU: {currentClaimedUser}</span>
+                    </div>
+                  ) : (
+                    <div className="mt-2 text-[9px] font-bold text-emerald-300 bg-emerald-950/50 border border-emerald-500/30 px-2 py-0.5 rounded-lg flex items-center justify-center gap-1 leading-tight">
+                      <Check className="w-3 h-3 text-emerald-400 flex-shrink-0" />
+                      <span>VAPAANA</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Color Selector */}
                 <div className="md:col-span-8 space-y-2">
-                  <span className="text-xs text-neutral-400 block font-bold">CHOOSE SIGNATURE HUE</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-neutral-400 block font-bold">CHOOSE SIGNATURE HUE</span>
+                    {isCurrentCombinationClaimed && (
+                      <span className="text-[10px] text-rose-400 font-semibold">Tämä väri on varattu lippulle #{selectedFlagId}</span>
+                    )}
+                  </div>
                   <div className="flex flex-wrap gap-2">
-                    {FLAG_COLORS.map(color => (
-                      <button
-                        key={color}
-                        type="button"
-                        onClick={() => setSelectedColor(color)}
-                        className={`w-6 h-6 rounded-full border transition-transform ${
-                          selectedColor === color 
-                            ? 'scale-125 border-white ring-2 ring-rose-500/50' 
-                            : 'border-transparent hover:scale-110'
-                        }`}
-                        style={{ backgroundColor: color }}
-                      />
-                    ))}
+                    {FLAG_COLORS.map(color => {
+                      const colorKey = `${selectedFlagId}_${color.toLowerCase()}`;
+                      const isColorClaimed = Boolean(claimedFlagsMap[colorKey]);
+                      return (
+                        <button
+                          key={color}
+                          type="button"
+                          onClick={() => setSelectedColor(color)}
+                          title={isColorClaimed ? `Varattu kapteenille ${claimedFlagsMap[colorKey]}` : 'Vapaana'}
+                          className={`w-6 h-6 rounded-full border transition-transform relative flex items-center justify-center ${
+                            selectedColor === color 
+                              ? 'scale-125 border-white ring-2 ring-rose-500/50' 
+                              : 'border-transparent hover:scale-110'
+                          }`}
+                          style={{ backgroundColor: color }}
+                        >
+                          {isColorClaimed && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-slate-900 border border-rose-400" />
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -307,18 +384,30 @@ export const Auth: React.FC<AuthProps> = ({ onRegister, onLogin }) => {
                 <div className="grid grid-cols-5 sm:grid-cols-10 gap-2 max-h-[140px] overflow-y-auto bg-slate-950 p-3 rounded-2xl border border-slate-850">
                   {flagIds.map(fId => {
                     const isSelected = selectedFlagId === fId;
+                    const fIdKey = `${fId}_${selectedColor.toLowerCase()}`;
+                    const isEmblemClaimed = Boolean(claimedFlagsMap[fIdKey]);
                     return (
                       <button
                         key={fId}
                         type="button"
                         onClick={() => setSelectedFlagId(fId)}
-                        className={`p-1.5 bg-slate-900 hover:bg-slate-800 rounded-lg border transition-all flex items-center justify-center ${
+                        title={isEmblemClaimed ? `Varattu (${claimedFlagsMap[fIdKey]})` : `Lippu #${fId}`}
+                        className={`p-1.5 bg-slate-900 hover:bg-slate-800 rounded-lg border transition-all flex items-center justify-center relative ${
                           isSelected 
-                            ? 'border-rose-500 ring-2 ring-rose-500/20 scale-110' 
-                            : 'border-slate-800'
+                            ? isEmblemClaimed
+                              ? 'border-rose-500 ring-2 ring-rose-500/40 scale-110'
+                              : 'border-rose-500 ring-2 ring-rose-500/20 scale-110' 
+                            : isEmblemClaimed
+                              ? 'border-rose-900/40 opacity-70'
+                              : 'border-slate-800'
                         }`}
                       >
                         <FlagSymbol flagId={fId} color={selectedColor} size="sm" />
+                        {isEmblemClaimed && (
+                          <div className="absolute -top-1 -right-1 bg-rose-950 border border-rose-500/60 rounded-full p-0.5 shadow">
+                            <Lock className="w-2.5 h-2.5 text-rose-400" />
+                          </div>
+                        )}
                       </button>
                     );
                   })}
@@ -331,8 +420,12 @@ export const Auth: React.FC<AuthProps> = ({ onRegister, onLogin }) => {
           {/* Submit action button */}
           <button
             type="submit"
-            disabled={loading}
-            className="w-full bg-rose-600 hover:bg-rose-500 disabled:bg-neutral-800 disabled:text-neutral-500 text-white font-bold py-3 rounded-2xl text-xs transition flex items-center justify-center gap-2 cursor-pointer mt-2"
+            disabled={loading || (isRegister && !isForgotPassword && isCurrentCombinationClaimed)}
+            className={`w-full text-white font-bold py-3 rounded-2xl text-xs transition flex items-center justify-center gap-2 cursor-pointer mt-2 ${
+              isRegister && !isForgotPassword && isCurrentCombinationClaimed
+                ? 'bg-neutral-800 border border-rose-500/30 text-rose-300 cursor-not-allowed'
+                : 'bg-rose-600 hover:bg-rose-500 disabled:bg-neutral-800 disabled:text-neutral-500'
+            }`}
           >
             <Compass className={`w-4.5 h-4.5 ${loading ? 'animate-spin' : ''}`} />
             {loading 
@@ -340,7 +433,9 @@ export const Auth: React.FC<AuthProps> = ({ onRegister, onLogin }) => {
               : isForgotPassword
                 ? 'RESET PIRATE PASSWORD'
                 : isRegister 
-                  ? 'ESTABLISH PIRATE HAVEN (REGISTER)' 
+                  ? isCurrentCombinationClaimed
+                    ? 'LIPPU JA VÄRI ON JO VARATTU (VALITSE TOINEN)'
+                    : 'ESTABLISH PIRATE HAVEN (REGISTER)' 
                   : 'HOIST SAILS (LOG IN)'
             }
           </button>

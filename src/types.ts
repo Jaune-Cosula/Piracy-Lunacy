@@ -63,7 +63,7 @@ export interface FleetCampaign {
   targetPortName: string;
   type: 'attack_conquer' | 'attack_loot' | 'attack_raze' | 'scout' | 'transfer';
   status: 'moving' | 'battling' | 'returning';
-  ticksRemaining: number; // starts at 11 for attack (4 move, 3 battle, 4 return) or 2 for scout
+  ticksRemaining: number; // starts at 11 for attack (4 move, 3 battle, 4 return) or 4 for scout (2 move, 2 return)
   totalDuration: number;
   sloop: number;
   schooner: number;
@@ -168,6 +168,7 @@ export interface ShipTypeConfig {
   upkeepGold: number;
   cannonCapacity: number;
   crewCapacity: number;
+  cargoCapacity: number;
   combatPower: number; // base ship strength
   speed: number;
 }
@@ -180,6 +181,7 @@ export const SHIP_CONFIGS: Record<'sloop' | 'schooner' | 'frigate' | 'galleon', 
     upkeepGold: 5,
     cannonCapacity: 4,
     crewCapacity: 15,
+    cargoCapacity: 300,
     combatPower: 10,
     speed: 4,
   },
@@ -190,6 +192,7 @@ export const SHIP_CONFIGS: Record<'sloop' | 'schooner' | 'frigate' | 'galleon', 
     upkeepGold: 12,
     cannonCapacity: 12,
     crewCapacity: 40,
+    cargoCapacity: 800,
     combatPower: 30,
     speed: 3,
   },
@@ -200,6 +203,7 @@ export const SHIP_CONFIGS: Record<'sloop' | 'schooner' | 'frigate' | 'galleon', 
     upkeepGold: 30,
     cannonCapacity: 28,
     crewCapacity: 100,
+    cargoCapacity: 2000,
     combatPower: 80,
     speed: 2,
   },
@@ -210,6 +214,7 @@ export const SHIP_CONFIGS: Record<'sloop' | 'schooner' | 'frigate' | 'galleon', 
     upkeepGold: 65,
     cannonCapacity: 60,
     crewCapacity: 220,
+    cargoCapacity: 5000,
     combatPower: 200,
     speed: 1,
   },

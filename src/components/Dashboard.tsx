@@ -76,6 +76,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
            (selectedPort.galleon * SHIP_CONFIGS.galleon.cannonCapacity);
   }, [selectedPort]);
 
+  const maxCargoCapacity = useMemo(() => {
+    if (!selectedPort) return 0;
+    return (selectedPort.sloop * SHIP_CONFIGS.sloop.cargoCapacity) +
+           (selectedPort.schooner * SHIP_CONFIGS.schooner.cargoCapacity) +
+           (selectedPort.frigate * SHIP_CONFIGS.frigate.cargoCapacity) +
+           (selectedPort.galleon * SHIP_CONFIGS.galleon.cargoCapacity);
+  }, [selectedPort]);
+
   const handleAction = async (actionFn: () => Promise<void>) => {
     setErrorMsg(null);
     setSuccessMsg(null);
@@ -483,10 +491,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
               {/* Shipyard construction */}
               <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-2xl space-y-4">
-                <h3 className="text-xs font-black uppercase text-slate-500 tracking-widest flex items-center gap-1">
-                  <Wrench className="w-4 h-4 text-teal-400" />
-                  Shipyard (Construct Fleet)
-                </h3>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-slate-800/80 pb-3">
+                  <h3 className="text-xs font-black uppercase text-slate-500 tracking-widest flex items-center gap-1">
+                    <Wrench className="w-4 h-4 text-teal-400" />
+                    Shipyard (Construct Fleet)
+                  </h3>
+                  <div className="text-[10.5px] font-mono text-amber-400 font-semibold bg-amber-400/10 px-2 py-0.5 rounded border border-amber-400/20 self-start sm:self-auto">
+                    📦 Harbor Fleet Cargo: {maxCargoCapacity.toLocaleString()} (Gold+Goods)
+                  </div>
+                </div>
 
                 <div className="space-y-3.5 text-xs font-mono">
                   {(['sloop', 'schooner', 'frigate', 'galleon'] as const).map(shipKey => {
@@ -499,8 +512,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             ⚔️{cfg.combatPower} Power | Upkeep: {cfg.upkeepGold}G/t
                           </span>
                         </div>
-                        <div className="text-[10.5px] text-neutral-400">
-                          Capacity: {cfg.crewCapacity} crew, {cfg.cannonCapacity} cannons
+                        <div className="text-[10.5px] text-neutral-300 flex flex-wrap gap-x-3 gap-y-0.5">
+                          <span>🛡️ Crew: {cfg.crewCapacity}</span>
+                          <span>⚔️ Cannons: {cfg.cannonCapacity}</span>
+                          <span className="text-amber-400 font-semibold">📦 Cargo: {cfg.cargoCapacity.toLocaleString()}</span>
                         </div>
                         
                         <div className="flex items-center justify-between border-t border-neutral-900 pt-2 mt-1 gap-2">

@@ -127,13 +127,38 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
     }
   };
 
+  // Count ports owned by each player
+  const ownedPortsCount = useMemo(() => {
+    const counts: Record<string, number> = {};
+    if (gameStateFull && gameStateFull.ports) {
+      Object.values(gameStateFull.ports).forEach((port: any) => {
+        if (port.ownerId) {
+          counts[port.ownerId] = (counts[port.ownerId] || 0) + 1;
+        }
+      });
+    }
+    return counts;
+  }, [gameStateFull]);
+
   // Filter news for current player if personal log tab is active
   const filteredNews = useMemo(() => {
     if (newsTab === 'history') {
       return fullHistory || news;
     }
     if (newsTab === 'global') {
-      return news;
+      return news.filter(item => {
+        const msg = item.message || '';
+        if (
+          msg.startsWith('TRAINING COMPLETE:') ||
+          msg.startsWith('CONSTRUCTION COMPLETE:') ||
+          msg.startsWith('UPGRADE COMPLETE:') ||
+          msg.startsWith('SHIPYARD COMPLETE:') ||
+          msg.startsWith('SPY DETECTED:')
+        ) {
+          return false;
+        }
+        return true;
+      });
     }
     return news.filter(item => 
       item.senderPlayerId === currentPlayerId || 
@@ -330,8 +355,9 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
 
                   <div className="text-right">
                     <div className="font-bold text-amber-400">{p.score.toLocaleString()} pts</div>
-                    <div className="text-[9px] text-neutral-400">
-                      💰{p.gold.toLocaleString()}G
+                    <div className="text-[10px] text-teal-400 font-mono flex items-center justify-end gap-1">
+                      <Anchor className="w-3 h-3 text-teal-400 flex-shrink-0" />
+                      <span>{ownedPortsCount[p.id] || 0} {ownedPortsCount[p.id] === 1 ? 'Port' : 'Ports'}</span>
                     </div>
                   </div>
                 </div>
@@ -358,7 +384,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
             </li>
             <li className="flex items-start gap-1.5">
               <ChevronRight className="w-3.5 h-3.5 text-rose-500 flex-shrink-0 mt-0.5" />
-              <span><strong>Scouting:</strong> Fast 6-tick spy voyage. Reveals garrisons, fortifications, and timed flight schedules at enemy ports.</span>
+              <span><strong>Scouting:</strong> Fast 4-tick spy voyage (2 to move, 2 to return). Reveals garrisons, fortifications, and timed flight schedules at enemy ports.</span>
             </li>
             <li className="flex items-start gap-1.5">
               <ChevronRight className="w-3.5 h-3.5 text-rose-500 flex-shrink-0 mt-0.5" />

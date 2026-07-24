@@ -8,6 +8,7 @@ import { Forum } from './components/Forum.tsx';
 import { GameGuide } from './components/GameGuide.tsx';
 import { GameState, Player, GamePort, SHIP_CONFIGS, UPKEEP_TROOP, UPKEEP_SCOUT } from './types.ts';
 import { FlagSymbol } from './components/FlagSymbol.tsx';
+import logoImg from './assets/logo.jpg';
 import { 
   Anchor, 
   Map as MapIcon, 
@@ -85,6 +86,19 @@ export default function App() {
     }
   }, [activeTab, totalForumCount, lastSeenForumCount]);
 
+  // Helper to safely parse JSON responses or throw meaningful error
+  const parseJsonResponse = async (res: Response) => {
+    const contentType = res.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      try {
+        return await res.json();
+      } catch (e) {
+        throw new Error(`Virheellinen JSON-vastaus palvelimelta (${res.status})`);
+      }
+    }
+    throw new Error(`Palvelinvirhe (${res.status}): ${res.statusText || 'Ei JSON-vastausta'}`);
+  };
+
   // Poll full game state
   const fetchGameState = async () => {
     try {
@@ -94,6 +108,11 @@ export default function App() {
       }
       const res = await fetch('/api/game/state', { headers });
       if (res.ok) {
+        const contentType = res.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+          console.warn('fetchGameState received non-JSON response:', contentType);
+          return;
+        }
         const data: GameState = await res.json();
         setGameState(data);
         
@@ -114,7 +133,7 @@ export default function App() {
         headers: { 'Authorization': `Bearer ${sessionToken}` }
       });
       if (res.ok) {
-        const data = await res.json();
+        const data = await parseJsonResponse(res);
         setPlayer(data);
       } else {
         // Clear stale session
@@ -167,13 +186,13 @@ export default function App() {
     });
     
     if (res.ok) {
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
       localStorage.setItem('piracy_token', data.token);
       setToken(data.token);
       setPlayer(data.player);
       await fetchGameState();
     } else {
-      const err = await res.json();
+      const err = await parseJsonResponse(res).catch(e => ({ error: e.message }));
       throw new Error(err.error || 'Registration failed!');
     }
   };
@@ -186,13 +205,13 @@ export default function App() {
     });
     
     if (res.ok) {
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
       localStorage.setItem('piracy_token', data.token);
       setToken(data.token);
       setPlayer(data.player);
       await fetchGameState();
     } else {
-      const err = await res.json();
+      const err = await parseJsonResponse(res).catch(e => ({ error: e.message }));
       throw new Error(err.error || 'Sign in failed!');
     }
   };
@@ -215,7 +234,7 @@ export default function App() {
       body: JSON.stringify({ portId, type, count })
     });
     if (!res.ok) {
-      const err = await res.json();
+      const err = await parseJsonResponse(res).catch(e => ({ error: e.message }));
       throw new Error(err.error || 'Recruitment failed');
     }
     await fetchGameState();
@@ -231,7 +250,7 @@ export default function App() {
       body: JSON.stringify({ portId, shipSize, count })
     });
     if (!res.ok) {
-      const err = await res.json();
+      const err = await parseJsonResponse(res).catch(e => ({ error: e.message }));
       throw new Error(err.error || 'Shipbuilding failed');
     }
     await fetchGameState();
@@ -247,7 +266,7 @@ export default function App() {
       body: JSON.stringify({ portAId, portBId, shipType })
     });
     if (!res.ok) {
-      const err = await res.json();
+      const err = await parseJsonResponse(res).catch(e => ({ error: e.message }));
       throw new Error(err.error || 'Trade lane establishment failed');
     }
     await fetchGameState();
@@ -263,7 +282,7 @@ export default function App() {
       body: JSON.stringify({ routeId })
     });
     if (!res.ok) {
-      const err = await res.json();
+      const err = await parseJsonResponse(res).catch(e => ({ error: e.message }));
       throw new Error(err.error || 'Route cancellation failed');
     }
     await fetchGameState();
@@ -279,7 +298,7 @@ export default function App() {
       body: JSON.stringify(payload)
     });
     if (!res.ok) {
-      const err = await res.json();
+      const err = await parseJsonResponse(res).catch(e => ({ error: e.message }));
       throw new Error(err.error || 'Armada deployment failed');
     }
     await fetchGameState();
@@ -295,7 +314,7 @@ export default function App() {
       body: JSON.stringify({ originPortId, targetPortId })
     });
     if (!res.ok) {
-      const err = await res.json();
+      const err = await parseJsonResponse(res).catch(e => ({ error: e.message }));
       throw new Error(err.error || 'Scout deployment failed');
     }
     await fetchGameState();
@@ -311,7 +330,7 @@ export default function App() {
       body: JSON.stringify(payload)
     });
     if (!res.ok) {
-      const err = await res.json();
+      const err = await parseJsonResponse(res).catch(e => ({ error: e.message }));
       throw new Error(err.error || 'Transfer dispatch failed');
     }
     await fetchGameState();
@@ -327,7 +346,7 @@ export default function App() {
     if (res.ok) {
       await fetchGameState();
     } else {
-      const err = await res.json();
+      const err = await parseJsonResponse(res).catch(e => ({ error: e.message }));
       throw new Error(err.error || 'Tikityksen ajaminen epäonnistui');
     }
   };
@@ -345,7 +364,7 @@ export default function App() {
     if (res.ok) {
       await fetchGameState();
     } else {
-      const err = await res.json();
+      const err = await parseJsonResponse(res).catch(e => ({ error: e.message }));
       throw new Error(err.error || 'Nopeuden muutos epäonnistui');
     }
   };
@@ -359,7 +378,7 @@ export default function App() {
     if (res.ok) {
       await fetchGameState();
     } else {
-      const err = await res.json();
+      const err = await parseJsonResponse(res).catch(e => ({ error: e.message }));
       throw new Error(err.error || 'NPC-alueiden nollaus epäonnistui');
     }
   };
@@ -377,7 +396,7 @@ export default function App() {
     if (res.ok) {
       await fetchGameState();
     } else {
-      const err = await res.json();
+      const err = await parseJsonResponse(res).catch(e => ({ error: e.message }));
       throw new Error(err.error || 'Pelin tauotus epäonnistui');
     }
   };
@@ -473,7 +492,7 @@ export default function App() {
   }
 
   if (!token || !player) {
-    return <Auth onRegister={handleRegister} onLogin={handleLogin} />;
+    return <Auth onRegister={handleRegister} onLogin={handleLogin} players={gameState?.players} />;
   }
 
   // Percent progress bar for ticks
@@ -496,7 +515,13 @@ export default function App() {
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           
           {/* Logo and Flag */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            <img 
+              src={logoImg} 
+              alt="Piracy Lunacy Logo" 
+              className="w-12 h-12 sm:w-14 sm:h-14 object-contain rounded-full border border-rose-500/30 shadow-lg bg-slate-950 p-0.5 flex-shrink-0"
+              referrerPolicy="no-referrer"
+            />
             <FlagSymbol flagId={player.flagId} color={player.flagColor} size="md" />
             <div>
               <h1 className="text-lg font-black tracking-widest text-slate-100 flex items-center gap-2">

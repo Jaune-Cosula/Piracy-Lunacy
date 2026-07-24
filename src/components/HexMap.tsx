@@ -1,7 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useRef } from 'react';
 import { GamePort, Player } from '../types.ts';
 import { FlagSymbol } from './FlagSymbol.tsx';
-import { Anchor, ShieldAlert, Users, Compass, Swords } from 'lucide-react';
+import { Anchor, ShieldAlert, Users, Compass, Swords, ZoomIn, ZoomOut, Maximize2, Move, Target } from 'lucide-react';
 
 interface HexMapProps {
   ports: Record<string, GamePort>;
@@ -21,6 +21,8 @@ export const HexMap: React.FC<HexMapProps> = ({
   activeCampaigns,
 }) => {
   const [hoveredPortId, setHoveredPortId] = useState<string | null>(null);
+  const [zoomMode, setZoomMode] = useState<'fit' | '100' | '125' | '150'>('fit');
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // SVG dimensions
   const width = 850;
@@ -32,6 +34,28 @@ export const HexMap: React.FC<HexMapProps> = ({
     const x = hexRadius * Math.sqrt(3) * (q + r / 2) + width / 2;
     const y = hexRadius * 1.5 * r + height / 2;
     return { x, y };
+  };
+
+  // Center scroll container on a given port or center of map
+  const centerOnPort = (portId?: string | null) => {
+    if (!containerRef.current) return;
+    const targetPort = portId ? ports[portId] : (
+      (Object.values(ports) as GamePort[]).find(p => p.ownerId === currentPlayerId) || (Object.values(ports) as GamePort[])[0]
+    );
+
+    const scale = zoomMode === '150' ? 1.5 : zoomMode === '125' ? 1.25 : 1;
+    const { x, y } = targetPort ? hexToPixel(targetPort.q, targetPort.r) : { x: width / 2, y: height / 2 };
+    
+    const targetX = x * scale;
+    const targetY = y * scale;
+    const containerW = containerRef.current.clientWidth;
+    const containerH = containerRef.current.clientHeight;
+
+    containerRef.current.scrollTo({
+      left: Math.max(0, targetX - containerW / 2),
+      top: Math.max(0, targetY - containerH / 2),
+      behavior: 'smooth'
+    });
   };
 
   // Generate background ocean grids and port coordinates
@@ -76,6 +100,11 @@ export const HexMap: React.FC<HexMapProps> = ({
   // Find the coordinates of campaigns in flight to draw arrows
   const flightPaths = useMemo(() => {
     return activeCampaigns.map(camp => {
+      // Stealth scout missions are only visible on the map to the captain who deployed them
+      if (camp.type === 'scout' && camp.senderId !== currentPlayerId) {
+        return null;
+      }
+
       const originPort = ports[camp.originPortId];
       const targetPort = ports[camp.targetPortId];
       if (!originPort || !targetPort) return null;
@@ -118,8 +147,8 @@ export const HexMap: React.FC<HexMapProps> = ({
   return (
     <div className="relative bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-2xl overflow-hidden">
       
-      {/* Map Header */}
-      <div className="flex flex-wrap items-center justify-between mb-4 border-b border-slate-800/80 pb-3 gap-2">
+      {/* Map Header & View Controls Toolbar */}
+      <div className="flex flex-wrap items-center justify-between mb-4 border-b border-slate-800/80 pb-3 gap-3">
         <div>
           <h3 className="text-xs font-black uppercase text-slate-500 tracking-widest flex items-center gap-1.5">
             <Compass className="w-4 h-4 text-rose-500 animate-spin-slow" />
@@ -127,26 +156,105 @@ export const HexMap: React.FC<HexMapProps> = ({
           </h3>
           <p className="text-[10px] text-slate-400 font-mono mt-0.5">Axial Hex Coordinates Range [-4, +4]</p>
         </div>
-        <div className="flex items-center gap-3 text-[10px] font-mono">
-          <div className="flex items-center gap-1.5 text-rose-400 bg-rose-500/10 px-2.5 py-1 rounded-full border border-rose-500/20 font-bold uppercase tracking-wider">
-            <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
-            <span>Active Fleets</span>
+
+        {/* View Mode Controls: Fit to Screen vs Touch Scroll / Zoom */}
+        <div className="flex flex-wrap items-center gap-2 text-xs font-mono">
+          <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 gap-1">
+            <button
+              type="button"
+              onClick={() => setZoomMode('fit')}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1.5 ${
+                zoomMode === 'fit'
+                  ? 'bg-rose-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-900'
+              }`}
+              title="Sovita kartta kerralla ruutuun (Ei rullausta tarvita)"
+            >
+              <Maximize2 className="w-3.5 h-3.5" />
+              <span>Sovita näyttöön</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setZoomMode('100');
+                setTimeout(() => centerOnPort(selectedPortId), 50);
+              }}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition flex items-center gap-1.5 ${
+                zoomMode === '100'
+                  ? 'bg-rose-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-900'
+              }`}
+              title="100% Koko - Rullaa koskettamalla"
+            >
+              <Move className="w-3.5 h-3.5" />
+              <span>100% Rullaa</span>
+            </button>
+
+            {zoomMode !== 'fit' && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setZoomMode('125')}
+                  className={`px-2 py-1 rounded-lg text-[10px] font-bold transition ${
+                    zoomMode === '125' ? 'bg-slate-800 text-amber-400' : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  125%
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setZoomMode('150')}
+                  className={`px-2 py-1 rounded-lg text-[10px] font-bold transition ${
+                    zoomMode === '150' ? 'bg-slate-800 text-amber-400' : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  150%
+                </button>
+              </>
+            )}
           </div>
-          <div className="text-slate-400 bg-slate-950 px-2.5 py-1 rounded-full border border-slate-800">
-            Click port to command
-          </div>
+
+          {zoomMode !== 'fit' && (
+            <button
+              type="button"
+              onClick={() => centerOnPort(selectedPortId)}
+              className="bg-slate-950 hover:bg-slate-900 text-amber-400 border border-slate-800 px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 transition"
+              title="Keskitä valittuun tai omaan satamaan"
+            >
+              <Target className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">Keskitä</span>
+            </button>
+          )}
         </div>
       </div>
 
       {/* Main Map SVG Grid */}
-      <div className="w-full flex justify-center overflow-x-auto select-none">
-        <div className="relative min-w-[850px] min-h-[650px] bg-slate-950 rounded-2xl border border-slate-800 overflow-hidden shadow-inner">
-          
-          {/* Subtle grid lines background overlay */}
-          <div className="absolute inset-0 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:20px_20px] pointer-events-none opacity-40" />
+      <div 
+        ref={containerRef}
+        className={`w-full relative bg-slate-950 rounded-2xl border border-slate-800 overflow-hidden shadow-inner select-none transition-all ${
+          zoomMode === 'fit'
+            ? 'flex justify-center items-center p-1 sm:p-2'
+            : 'overflow-auto max-h-[70vh] md:max-h-[650px] p-2 touch-pan-x touch-pan-y overscroll-contain scrollbar-thin scrollbar-thumb-slate-800'
+        }`}
+      >
+        {/* Subtle grid lines background overlay */}
+        <div className="absolute inset-0 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:20px_20px] pointer-events-none opacity-40" />
 
-          <svg width={width} height={height} className="overflow-visible">
-            {/* Draw Sea Grid background tiles */}
+        {(() => {
+          const scale = zoomMode === '150' ? 1.5 : zoomMode === '125' ? 1.25 : 1;
+          const svgW = width * (zoomMode === 'fit' ? 1 : scale);
+          const svgH = height * (zoomMode === 'fit' ? 1 : scale);
+
+          return (
+            <svg 
+              width={zoomMode === 'fit' ? '100%' : svgW} 
+              height={zoomMode === 'fit' ? '100%' : svgH}
+              viewBox={`0 0 ${width} ${height}`}
+              preserveAspectRatio="xMidYMid meet"
+              className={`overflow-visible ${zoomMode === 'fit' ? 'w-full h-auto max-w-full max-h-[70vh]' : 'flex-shrink-0'}`}
+            >
+              {/* Draw Sea Grid background tiles */}
             <g id="sea-tiles">
               {mapObjects.map(obj => {
                 const isSelected = selectedPortId && obj.port && obj.port.id === selectedPortId;
@@ -307,6 +415,8 @@ export const HexMap: React.FC<HexMapProps> = ({
               })}
             </g>
           </svg>
+          );
+        })()}
 
           {/* Hover HUD Panel overlay */}
           {hoveredPortId && ports[hoveredPortId] && (
@@ -380,6 +490,5 @@ export const HexMap: React.FC<HexMapProps> = ({
           )}
         </div>
       </div>
-    </div>
   );
 };

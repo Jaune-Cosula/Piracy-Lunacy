@@ -647,8 +647,8 @@ export function processGameTick() {
         campaignsToComplete.push(c.id);
       }
     } else {
-      // Scout Transition (2 Ticks Total: 1 move/spy, 1 return)
-      if (c.ticksRemaining === 1) {
+      // Scout Transition (4 Ticks Total: 2 move/spy, 2 return)
+      if (c.ticksRemaining === 2) {
         c.status = 'battling'; // spys/scouts are 'battling' (meaning actively scouting)
         resolveScout(c);
         c.status = 'returning';
@@ -725,7 +725,9 @@ export function processGameTick() {
               tick: state.currentTick,
               type: 'system',
               message: `TRAINING COMPLETE: ${port.ownerName} has completed training ${item.count} troops at ${port.name}!`,
-              timestamp: new Date().toISOString()
+              timestamp: new Date().toISOString(),
+              senderPlayerId: port.ownerId || undefined,
+              targetPlayerId: port.ownerId || undefined
             });
           } else if (item.type === 'cannons') {
             port.cannons += item.count;
@@ -734,7 +736,9 @@ export function processGameTick() {
               tick: state.currentTick,
               type: 'system',
               message: `CONSTRUCTION COMPLETE: ${port.ownerName} has completed construction of ${item.count} cannons at ${port.name}!`,
-              timestamp: new Date().toISOString()
+              timestamp: new Date().toISOString(),
+              senderPlayerId: port.ownerId || undefined,
+              targetPlayerId: port.ownerId || undefined
             });
           } else if (item.type === 'fort') {
             port.fortificationLevel += item.count;
@@ -744,7 +748,9 @@ export function processGameTick() {
               tick: state.currentTick,
               type: 'system',
               message: `UPGRADE COMPLETE: ${port.ownerName} has successfully fortified ${port.name} to Level ${port.fortificationLevel}!`,
-              timestamp: new Date().toISOString()
+              timestamp: new Date().toISOString(),
+              senderPlayerId: port.ownerId || undefined,
+              targetPlayerId: port.ownerId || undefined
             });
           } else if (item.type === 'sloop') {
             port.sloop += item.count;
@@ -753,7 +759,9 @@ export function processGameTick() {
               tick: state.currentTick,
               type: 'system',
               message: `SHIPYARD COMPLETE: ${port.ownerName} has finished building ${item.count} Sloop(s) at ${port.name}!`,
-              timestamp: new Date().toISOString()
+              timestamp: new Date().toISOString(),
+              senderPlayerId: port.ownerId || undefined,
+              targetPlayerId: port.ownerId || undefined
             });
           } else if (item.type === 'schooner') {
             port.schooner += item.count;
@@ -762,7 +770,9 @@ export function processGameTick() {
               tick: state.currentTick,
               type: 'system',
               message: `SHIPYARD COMPLETE: ${port.ownerName} has finished building ${item.count} Schooner(s) at ${port.name}!`,
-              timestamp: new Date().toISOString()
+              timestamp: new Date().toISOString(),
+              senderPlayerId: port.ownerId || undefined,
+              targetPlayerId: port.ownerId || undefined
             });
           } else if (item.type === 'frigate') {
             port.frigate += item.count;
@@ -771,7 +781,9 @@ export function processGameTick() {
               tick: state.currentTick,
               type: 'system',
               message: `SHIPYARD COMPLETE: ${port.ownerName} has finished building ${item.count} Frigate(s) at ${port.name}!`,
-              timestamp: new Date().toISOString()
+              timestamp: new Date().toISOString(),
+              senderPlayerId: port.ownerId || undefined,
+              targetPlayerId: port.ownerId || undefined
             });
           } else if (item.type === 'galleon') {
             port.galleon += item.count;
@@ -780,7 +792,9 @@ export function processGameTick() {
               tick: state.currentTick,
               type: 'system',
               message: `SHIPYARD COMPLETE: ${port.ownerName} has finished building ${item.count} Galleon(s) at ${port.name}!`,
-              timestamp: new Date().toISOString()
+              timestamp: new Date().toISOString(),
+              senderPlayerId: port.ownerId || undefined,
+              targetPlayerId: port.ownerId || undefined
             });
           }
         }
@@ -1374,6 +1388,18 @@ app.post('/api/auth/register', (req, res) => {
     return res.status(400).json({ error: 'This pirate name is already feared on these waters!' });
   }
 
+  // Check duplicate flag emblem and color combination
+  const reqFlagId = Number(flagId) || 1;
+  const reqFlagColor = (flagColor || '#e11d48').toLowerCase();
+  const duplicateFlagOwner = Object.values(state.players).find(
+    p => p.flagId === reqFlagId && (p.flagColor || '').toLowerCase() === reqFlagColor
+  );
+  if (duplicateFlagOwner) {
+    return res.status(400).json({ 
+      error: `Tämä lippu- ja väriyhdistelmä on jo varattu kapteenille ${duplicateFlagOwner.username}! Valitse toinen lippu tai väri.` 
+    });
+  }
+
   // Create Player ID (Token)
   const playerId = `pirate_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
   
@@ -1545,7 +1571,7 @@ app.get('/api/game/state', (req, res) => {
     }
   }
 
-  // Direct message security filtering
+  // Direct message and scout report security filtering
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
   const player = token ? state.players[token] : null;
@@ -1554,14 +1580,19 @@ app.get('/api/game/state', (req, res) => {
     const filteredDMs = (state.directMessages || []).filter(
       dm => dm.senderId === player.id || dm.receiverId === player.id
     );
+    const filteredScoutReports = (state.scoutReports || []).filter(
+      report => report.senderId === player.id
+    );
     res.json({
       ...state,
-      directMessages: filteredDMs
+      directMessages: filteredDMs,
+      scoutReports: filteredScoutReports
     });
   } else {
     res.json({
       ...state,
-      directMessages: []
+      directMessages: [],
+      scoutReports: []
     });
   }
 });
@@ -2003,7 +2034,7 @@ app.post('/api/game/scout', authenticateToken, (req, res) => {
   originPort.scoutCount -= 1;
   originPort.sloop -= 1;
 
-  // Create Campaign (Total 2 ticks: 1 move/spy, 1 return)
+  // Create Campaign (Total 4 ticks: 2 move/spy, 2 return)
   const campaign: FleetCampaign = {
     id: `scout_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
     senderId: player.id,
@@ -2016,8 +2047,8 @@ app.post('/api/game/scout', authenticateToken, (req, res) => {
     targetPortName: targetPort.name,
     type: 'scout',
     status: 'moving',
-    ticksRemaining: 2,
-    totalDuration: 2,
+    ticksRemaining: 4,
+    totalDuration: 4,
     sloop: 1,
     schooner: 0,
     frigate: 0,
@@ -2030,7 +2061,7 @@ app.post('/api/game/scout', authenticateToken, (req, res) => {
 
   state.campaigns.push(campaign);
   saveDb();
-  res.json({ success: true, message: 'Scout sloop deployed in stealth! ETA for intel: 1 tick.', campaign });
+  res.json({ success: true, message: 'Scout sloop deployed in stealth! ETA for intel: 2 ticks (return voyage: 2 ticks).', campaign });
 });
 
 // Establish Trade Route

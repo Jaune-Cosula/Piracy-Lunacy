@@ -86,10 +86,10 @@ export const Military: React.FC<MilitaryProps> = ({
   // Find latest scout report for targetPortId to display intelligence briefing
   const latestReportForTarget = useMemo(() => {
     if (!targetPortId) return null;
-    const reports = scoutReports.filter(r => r.targetPortId === targetPortId);
+    const reports = scoutReports.filter(r => r.targetPortId === targetPortId && r.senderId === player.id);
     if (reports.length === 0) return null;
     return [...reports].sort((a, b) => b.scoutTick - a.scoutTick)[0];
-  }, [scoutReports, targetPortId]);
+  }, [scoutReports, targetPortId, player.id]);
 
   // Carrying capacity math
   const capacities = useMemo(() => {
@@ -108,6 +108,11 @@ export const Military: React.FC<MilitaryProps> = ({
                       (f * SHIP_CONFIGS.frigate.cannonCapacity) +
                       (g * SHIP_CONFIGS.galleon.cannonCapacity);
 
+    const cargoCap = (s * SHIP_CONFIGS.sloop.cargoCapacity) +
+                     (sc * SHIP_CONFIGS.schooner.cargoCapacity) +
+                     (f * SHIP_CONFIGS.frigate.cargoCapacity) +
+                     (g * SHIP_CONFIGS.galleon.cargoCapacity);
+
     // Fleet Combat power: Ships + Crew (3 each) + Cannons (8 each)
     const combatPower = (s * SHIP_CONFIGS.sloop.combatPower) +
                         (sc * SHIP_CONFIGS.schooner.combatPower) +
@@ -116,7 +121,7 @@ export const Military: React.FC<MilitaryProps> = ({
                         (troopsToSend * 3) +
                         (cannonsToSend * 8);
 
-    return { crewCap, cannonCap, combatPower };
+    return { crewCap, cannonCap, cargoCap, combatPower };
   }, [sloopToSend, schoonerToSend, frigateToSend, galleonToSend, troopsToSend, cannonsToSend]);
 
   // Handle setting all available resources to send
@@ -411,7 +416,7 @@ export const Military: React.FC<MilitaryProps> = ({
                   <div className="p-3 bg-neutral-950 rounded border border-neutral-800 space-y-2 mt-4">
                     <div className="text-[10.5px] font-bold text-teal-400">DEPLOY SPY SLOOP (SCOUT)</div>
                     <p className="text-[9.5px] text-neutral-400">
-                      Dispatches a fast stealth vessel to report target port structures, ships, and defense forces. Takes 1 tick to arrive and 1 tick to return.
+                      Dispatches a fast stealth vessel to report target port structures, ships, and defense forces. Takes 2 ticks to arrive and 2 ticks to return.
                     </p>
                     <button
                       type="button"
@@ -544,6 +549,12 @@ export const Military: React.FC<MilitaryProps> = ({
                       {cannonsToSend} / {capacities.cannonCap}
                     </span>
                   </div>
+                  <div className="flex justify-between border-t border-neutral-900 pt-1.5 mt-1.5">
+                    <span className="text-neutral-400">Fleet Booty Cargo Capacity:</span>
+                    <span className="font-bold text-amber-400">
+                      üì¶ {capacities.cargoCap.toLocaleString()} (Gold + Goods)
+                    </span>
+                  </div>
                 </div>
 
                 {/* Live Target Intelligence Briefing & Victory Forecast */}
@@ -573,6 +584,17 @@ export const Military: React.FC<MilitaryProps> = ({
                     explanation = `Requires strictly greater strength (> ${liveDefensePower} Power) to succeed.`;
                   }
 
+                  let estPlunderedGold = 0;
+                  let estPlunderedGoods = 0;
+                  if (targetPort.type === 'npc') {
+                    estPlunderedGold = Math.max(Math.floor((targetPort.gold || 0) * 0.8), Math.floor(targetPort.baseGoldProduction * 4));
+                    estPlunderedGoods = Math.max(Math.floor((targetPort.goods || 0) * 0.8), Math.floor(targetPort.baseGoodsProduction * 4));
+                  } else if (latestReportForTarget && latestReportForTarget.gold !== undefined) {
+                    estPlunderedGold = Math.floor((latestReportForTarget.gold || 0) * 0.4);
+                    estPlunderedGoods = Math.floor((latestReportForTarget.goods || 0) * 0.4);
+                  }
+                  const estTotalBooty = estPlunderedGold + estPlunderedGoods;
+
                   return (
                     <div className="p-3 bg-neutral-950 rounded border border-neutral-850 space-y-3.5 text-[11px] font-mono">
                       <div className="flex justify-between items-center border-b border-neutral-900 pb-1.5">
@@ -601,7 +623,7 @@ export const Military: React.FC<MilitaryProps> = ({
 
                         {latestReportForTarget && latestReportForTarget.gold !== undefined && (
                           <>
-                            <div className="text-yellow-400">üí∞ Scouted Gold:</div>
+                            <div className="text-yellow-400">Ì†ΩÌ≤∞ Scouted Gold:</div>
                             <div className="text-right text-yellow-400 font-bold">{latestReportForTarget.gold.toLocaleString()} G</div>
                           </>
                         )}
@@ -646,6 +668,44 @@ export const Military: React.FC<MilitaryProps> = ({
                           </div>
                         )}
                       </div>
+
+                      {attackType === 'attack_loot' && estTotalBooty > 0 && (
+                        <div className="border-t border-neutral-900 pt-2.5 space-y-1.5">
+                          <div className="text-[9px] text-amber-400 font-bold uppercase tracking-wider flex items-center justify-between">
+                            <span>üì¶ PLUNDER CARGO CAPACITY:</span>
+                            <span className="text-[10px] font-bold text-amber-400 font-mono">
+                              {capacities.cargoCap.toLocaleString()} / {estTotalBooty.toLocaleString()} Booty
+                            </span>
+                          </div>
+
+                          {capacities.cargoCap === 0 ? (
+                            <div className="text-neutral-500 italic text-[9.5px]">
+                              Select ships to expand cargo capacity for carrying plundered loot.
+                            </div>
+                          ) : capacities.cargoCap >= estTotalBooty ? (
+                            <div className="bg-emerald-950/20 text-emerald-400 border border-emerald-500/20 p-2 rounded font-mono text-[9.5px] space-y-0.5">
+                              <div className="font-bold flex items-center gap-1">
+                                ‚úÖ FULL CARGO CAPACITY
+                              </div>
+                              <div className="text-neutral-300">
+                                Selected fleet capacity ({capacities.cargoCap.toLocaleString()}) can carry ALL estimated plunder (~{estTotalBooty.toLocaleString()} booty: {estPlunderedGold.toLocaleString()} Gold + {estPlunderedGoods.toLocaleString()} Goods).
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="bg-amber-950/20 text-amber-400 border border-amber-500/20 p-2 rounded font-mono text-[9.5px] space-y-0.5">
+                              <div className="font-bold flex items-center gap-1">
+                                ‚ö†Ô∏è CARGO CAPACITY LIMITED
+                              </div>
+                              <div className="text-neutral-300">
+                                Target has ~{estTotalBooty.toLocaleString()} estimated booty ({estPlunderedGold.toLocaleString()} Gold + {estPlunderedGoods.toLocaleString()} Goods), but your selected fleet can only carry {capacities.cargoCap.toLocaleString()}.
+                              </div>
+                              <div className="text-amber-300 font-semibold pt-0.5">
+                                üí° Add more ships (Schooner +800, Frigate +2,000, Galleon +5,000) to bring home all the loot!
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
 
                       {latestReportForTarget ? (
                         <div className="border-t border-dashed border-neutral-900 pt-2 text-[9.5px] text-neutral-400">
