@@ -168,10 +168,10 @@ export const HexMap: React.FC<HexMapProps> = ({
                   ? 'bg-rose-600 text-white shadow-md'
                   : 'text-slate-400 hover:text-white hover:bg-slate-900'
               }`}
-              title="Sovita kartta kerralla ruutuun (Ei rullausta tarvita)"
+              title="Fit map to screen (No scrolling needed)"
             >
               <Maximize2 className="w-3.5 h-3.5" />
-              <span>Sovita näyttöön</span>
+              <span>Fit Screen</span>
             </button>
 
             <button
@@ -185,10 +185,10 @@ export const HexMap: React.FC<HexMapProps> = ({
                   ? 'bg-rose-600 text-white shadow-md'
                   : 'text-slate-400 hover:text-white hover:bg-slate-900'
               }`}
-              title="100% Koko - Rullaa koskettamalla"
+              title="100% Size - Touch & Scroll"
             >
               <Move className="w-3.5 h-3.5" />
-              <span>100% Rullaa</span>
+              <span>100% Scroll</span>
             </button>
 
             {zoomMode !== 'fit' && (
@@ -220,10 +220,10 @@ export const HexMap: React.FC<HexMapProps> = ({
               type="button"
               onClick={() => centerOnPort(selectedPortId)}
               className="bg-slate-950 hover:bg-slate-900 text-amber-400 border border-slate-800 px-2.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1 transition"
-              title="Keskitä valittuun tai omaan satamaan"
+              title="Center on selected or owned port"
             >
               <Target className="w-3.5 h-3.5 text-amber-400" />
-              <span className="hidden sm:inline">Keskitä</span>
+              <span className="hidden sm:inline">Center</span>
             </button>
           )}
         </div>

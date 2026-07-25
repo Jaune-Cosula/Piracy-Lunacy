@@ -125,7 +125,7 @@ export const Auth: React.FC<AuthProps> = ({ onRegister, onLogin, players }) => {
     // Normal Register/Login flow
     if (isRegister) {
       if (isCurrentCombinationClaimed) {
-        setErrorMsg(`Tämä lippu- ja väriyhdistelmä on jo varattu kapteenille ${currentClaimedUser}! Valitse toinen lippu tai väri.`);
+        setErrorMsg(`This flag and color combination is already claimed by Captain ${currentClaimedUser}! Choose another flag or color.`);
         return;
       }
       if (email.trim().length > 0 && !email.includes('@')) {
@@ -344,7 +344,7 @@ export const Auth: React.FC<AuthProps> = ({ onRegister, onLogin, players }) => {
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-neutral-400 block font-bold">CHOOSE SIGNATURE HUE</span>
                     {isCurrentCombinationClaimed && (
-                      <span className="text-[10px] text-rose-400 font-semibold">Tämä väri on varattu lippulle #{selectedFlagId}</span>
+                      <span className="text-[10px] text-rose-400 font-semibold">This color is reserved for Flag #{selectedFlagId}</span>
                     )}
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -356,7 +356,7 @@ export const Auth: React.FC<AuthProps> = ({ onRegister, onLogin, players }) => {
                           key={color}
                           type="button"
                           onClick={() => setSelectedColor(color)}
-                          title={isColorClaimed ? `Varattu kapteenille ${claimedFlagsMap[colorKey]}` : 'Vapaana'}
+                          title={isColorClaimed ? `Claimed by Captain ${claimedFlagsMap[colorKey]}` : 'Available'}
                           className={`w-6 h-6 rounded-full border transition-transform relative flex items-center justify-center ${
                             selectedColor === color 
                               ? 'scale-125 border-white ring-2 ring-rose-500/50' 
@@ -391,7 +391,7 @@ export const Auth: React.FC<AuthProps> = ({ onRegister, onLogin, players }) => {
                         key={fId}
                         type="button"
                         onClick={() => setSelectedFlagId(fId)}
-                        title={isEmblemClaimed ? `Varattu (${claimedFlagsMap[fIdKey]})` : `Lippu #${fId}`}
+                        title={isEmblemClaimed ? `Claimed by ${claimedFlagsMap[fIdKey]}` : `Flag #${fId}`}
                         className={`p-1.5 bg-slate-900 hover:bg-slate-800 rounded-lg border transition-all flex items-center justify-center relative ${
                           isSelected 
                             ? isEmblemClaimed
@@ -434,7 +434,7 @@ export const Auth: React.FC<AuthProps> = ({ onRegister, onLogin, players }) => {
                 ? 'RESET PIRATE PASSWORD'
                 : isRegister 
                   ? isCurrentCombinationClaimed
-                    ? 'LIPPU JA VÄRI ON JO VARATTU (VALITSE TOINEN)'
+                    ? 'FLAG & COLOR COMBINATION TAKEN (CHOOSE ANOTHER)'
                     : 'ESTABLISH PIRATE HAVEN (REGISTER)' 
                   : 'HOIST SAILS (LOG IN)'
             }

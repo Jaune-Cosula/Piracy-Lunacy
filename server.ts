@@ -1421,7 +1421,7 @@ app.post('/api/auth/register', (req, res) => {
   );
   if (duplicateFlagOwner) {
     return res.status(400).json({ 
-      error: `Tämä lippu- ja väriyhdistelmä on jo varattu kapteenille ${duplicateFlagOwner.username}! Valitse toinen lippu tai väri.` 
+      error: `This flag and color combination is already claimed by Captain ${duplicateFlagOwner.username}! Choose another flag or color.` 
     });
   }
 
@@ -2236,7 +2236,7 @@ app.get('/api/game/history', (req, res) => {
     return res.json(state.news || []);
   } catch (err) {
     console.error('Failed to read round history:', err);
-    res.status(500).json({ error: 'Historian lukeminen epäonnistui' });
+    res.status(500).json({ error: 'Failed to read round chronicle history' });
   }
 });
 
@@ -2538,4 +2538,3 @@ async function startServer() {
 }
 
 startServer();
-

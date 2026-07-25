@@ -651,7 +651,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                     : 'text-amber-500/70 border-transparent hover:text-amber-400'
                 }`}
               >
-                {isLoadingHistory ? 'LADATAAN...' : 'KOKO KROONIKKA'}
+                {isLoadingHistory ? 'LOADING...' : 'FULL CHRONICLE'}
               </button>
             </div>
             <div className="flex items-center gap-2">
@@ -662,9 +662,9 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                   rel="noreferrer"
                   download="round_history.json"
                   className="text-[9px] font-mono bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 px-2 py-0.5 rounded border border-amber-500/30 transition flex items-center gap-1"
-                  title="Lataa kierroskronikka JSON-muodossa"
+                  title="Download round chronicle in JSON format"
                 >
-                  <Download className="w-3 h-3" /> LATAA
+                  <Download className="w-3 h-3" /> DOWNLOAD
                 </a>
               )}
               <div className="text-[10px] font-mono bg-neutral-950 px-2 py-0.5 rounded text-rose-400 border border-neutral-800">

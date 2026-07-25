@@ -93,10 +93,10 @@ export default function App() {
       try {
         return await res.json();
       } catch (e) {
-        throw new Error(`Virheellinen JSON-vastaus palvelimelta (${res.status})`);
+        throw new Error(`Invalid JSON response from server (${res.status})`);
       }
     }
-    throw new Error(`Palvelinvirhe (${res.status}): ${res.statusText || 'Ei JSON-vastausta'}`);
+    throw new Error(`Server error (${res.status}): ${res.statusText || 'No JSON response'}`);
   };
 
   // Poll full game state
@@ -682,7 +682,7 @@ export default function App() {
               {totalForumCount > 0 && (
                 unreadForumCount > 0 ? (
                   <span className="px-2 py-0.5 rounded-full text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/40 font-bold flex-shrink-0 animate-pulse">
-                    {totalForumCount} ({unreadForumCount} uutta)
+                    {totalForumCount} ({unreadForumCount} new)
                   </span>
                 ) : (
                   <span className="text-[11px] text-slate-500 font-normal flex-shrink-0">
