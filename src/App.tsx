@@ -256,18 +256,50 @@ export default function App() {
     await fetchGameState();
   };
 
-  const handleEstablishTrade = async (portAId: string, portBId: string, shipType: 'sloop' | 'schooner') => {
+  const handleEstablishTrade = async (proposerPortId: string, recipientPortId: string, shipType: 'sloop' | 'schooner') => {
     const res = await fetch('/api/game/trade', {
       method: 'POST',
       headers: { 
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`
       },
-      body: JSON.stringify({ portAId, portBId, shipType })
+      body: JSON.stringify({ proposerPortId, recipientPortId, shipType })
     });
     if (!res.ok) {
       const err = await parseJsonResponse(res).catch(e => ({ error: e.message }));
-      throw new Error(err.error || 'Trade lane establishment failed');
+      throw new Error(err.error || 'Trade proposal failed');
+    }
+    await fetchGameState();
+  };
+
+  const handleAcceptTrade = async (routeId: string) => {
+    const res = await fetch('/api/game/trade/accept', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ routeId })
+    });
+    if (!res.ok) {
+      const err = await parseJsonResponse(res).catch(e => ({ error: e.message }));
+      throw new Error(err.error || 'Failed to accept trade proposal');
+    }
+    await fetchGameState();
+  };
+
+  const handleDeclineTrade = async (routeId: string) => {
+    const res = await fetch('/api/game/trade/decline', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ routeId })
+    });
+    if (!res.ok) {
+      const err = await parseJsonResponse(res).catch(e => ({ error: e.message }));
+      throw new Error(err.error || 'Failed to decline trade proposal');
     }
     await fetchGameState();
   };
@@ -283,7 +315,7 @@ export default function App() {
     });
     if (!res.ok) {
       const err = await parseJsonResponse(res).catch(e => ({ error: e.message }));
-      throw new Error(err.error || 'Route cancellation failed');
+      throw new Error(err.error || 'Trade cancellation / embargo failed');
     }
     await fetchGameState();
   };
@@ -336,6 +368,22 @@ export default function App() {
     await fetchGameState();
   };
 
+  const handleCancelCampaign = async (campaignId: string) => {
+    const res = await fetch('/api/game/campaign/cancel', {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ campaignId })
+    });
+    if (!res.ok) {
+      const err = await parseJsonResponse(res).catch(e => ({ error: e.message }));
+      throw new Error(err.error || 'Failed to cancel campaign');
+    }
+    await fetchGameState();
+  };
+
   // Sandbox overrides (Admin Protected)
   const handleManualTick = async (adminKey?: string) => {
     const key = adminKey || localStorage.getItem('piracy_admin_key') || '';
@@ -347,7 +395,7 @@ export default function App() {
       await fetchGameState();
     } else {
       const err = await parseJsonResponse(res).catch(e => ({ error: e.message }));
-      throw new Error(err.error || 'Tikityksen ajaminen epäonnistui');
+      throw new Error(err.error || 'Failed to run tick');
     }
   };
 
@@ -365,7 +413,7 @@ export default function App() {
       await fetchGameState();
     } else {
       const err = await parseJsonResponse(res).catch(e => ({ error: e.message }));
-      throw new Error(err.error || 'Nopeuden muutos epäonnistui');
+      throw new Error(err.error || 'Failed to change speed mode');
     }
   };
 
@@ -379,7 +427,7 @@ export default function App() {
       await fetchGameState();
     } else {
       const err = await parseJsonResponse(res).catch(e => ({ error: e.message }));
-      throw new Error(err.error || 'NPC-alueiden nollaus epäonnistui');
+      throw new Error(err.error || 'Failed to reset NPC areas');
     }
   };
 
@@ -397,7 +445,7 @@ export default function App() {
       await fetchGameState();
     } else {
       const err = await parseJsonResponse(res).catch(e => ({ error: e.message }));
-      throw new Error(err.error || 'Pelin tauotus epäonnistui');
+      throw new Error(err.error || 'Failed to toggle pause mode');
     }
   };
 
@@ -452,10 +500,13 @@ export default function App() {
       upkeepGold += (c.galleon || 0) * SHIP_CONFIGS.galleon.upkeepGold;
     });
 
-    // Trade routes gold production
-    const playerTradeRoutes = (gameState.tradeRoutes || []).filter(r => r.active && r.ownerId === player.id);
+    // Alliance Trade routes gold production
+    const playerTradeRoutes = (gameState.tradeRoutes || []).filter(r => 
+      (r.status === 'active' || r.active) && 
+      ((r.proposerPlayerId || r.ownerId) === player.id || r.recipientPlayerId === player.id)
+    );
     playerTradeRoutes.forEach(r => {
-      const tradeBonus = r.shipType === 'schooner' ? 150 : 60;
+      const tradeBonus = r.shipType === 'schooner' ? 250 : 100;
       grossGold += tradeBonus;
     });
 
@@ -794,9 +845,12 @@ export default function App() {
                   player={player}
                   ports={gameState.ports}
                   tradeRoutes={gameState.tradeRoutes}
+                  players={gameState.players}
                   onBuildShip={handleBuildShip}
                   onTrainUnit={handleTrainUnit}
                   onEstablishTrade={handleEstablishTrade}
+                  onAcceptTrade={handleAcceptTrade}
+                  onDeclineTrade={handleDeclineTrade}
                   onCancelTrade={handleCancelTrade}
                   selectedPortId={selectedPortId}
                   onSelectPort={setSelectedPortId}
@@ -809,9 +863,12 @@ export default function App() {
                   ports={gameState.ports}
                   campaigns={gameState.campaigns}
                   scoutReports={gameState.scoutReports}
+                  tradeRoutes={gameState.tradeRoutes}
+                  players={gameState.players}
                   onLaunchAttack={handleLaunchAttack}
                   onLaunchScout={handleLaunchScout}
                   onLaunchTransfer={handleLaunchTransfer}
+                  onCancelCampaign={handleCancelCampaign}
                   selectedPortId={selectedPortId}
                   onSelectPort={setSelectedPortId}
                 />

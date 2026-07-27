@@ -104,14 +104,17 @@ export const GameGuide: React.FC<GameGuideProps> = ({ isOpen, onClose }) => {
                 </p>
               </div>
 
-              <div className="p-4 bg-slate-900/40 border border-slate-850 rounded-xl space-y-2">
-                <h4 className="font-bold text-slate-100 flex items-center gap-1.5">
-                  <TrendingUp className="w-4 h-4 text-yellow-500" />
-                  Establish Commercial Trade Lanes
+              <div className="p-4 bg-amber-950/20 border border-amber-500/30 rounded-xl space-y-2 col-span-1 md:col-span-2">
+                <h4 className="font-bold text-amber-300 flex items-center gap-1.5 text-sm">
+                  <TrendingUp className="w-4 h-4 text-yellow-400" />
+                  Establish Commercial Trade Lanes & Diplomatic Pacts (CRITICAL STRATEGY)
                 </h4>
-                <p className="text-neutral-400">
-                  Establish a trade route between two of your owned islands. Assigning a Sloop or Schooner from your docks to run the trade route generates recurring bonus gold doubloons every single game tick.
+                <p className="text-neutral-300 leading-relaxed">
+                  Trade routes are the single most powerful engine for long-term empire survival and expansion. Assigning a Sloop or Schooner to run a trade route generates substantial <span className="text-yellow-400 font-bold">+100 to +250 Gold/tick</span> continuously for <span className="text-white font-bold">BOTH</span> trading partners.
                 </p>
+                <div className="text-[11px] text-amber-200/80 bg-amber-950/40 p-2.5 rounded-lg border border-amber-500/20 font-sans font-semibold">
+                  🛡️ <span className="text-amber-400">NON-AGGRESSION PACT BINDING:</span> An active trade route with another player seals a binding Non-Aggression Pact! Neither Captain can launch armadas or attacks against the other while the trade lane remains active, securing your borders against surprise raids.
+                </div>
               </div>
 
               <div className="p-4 bg-slate-900/40 border border-slate-850 rounded-xl space-y-2">
@@ -193,7 +196,55 @@ export const GameGuide: React.FC<GameGuideProps> = ({ isOpen, onClose }) => {
             </div>
           </div>
 
-          {/* SECTION 4: WARFARE RULES */}
+          {/* SECTION 4: STRATEGIC IMPORTANCE OF TRADE ROUTES */}
+          <div className="bg-gradient-to-br from-amber-950/40 via-slate-900 to-slate-950 border border-amber-500/40 rounded-2xl p-5 space-y-4">
+            <h3 className="text-sm font-black text-amber-400 flex items-center gap-2 font-sans tracking-wide">
+              <TrendingUp className="w-4 h-4 text-amber-400" />
+              4. STRATEGIC IMPORTANCE OF TRADE ROUTES & ALLIANCES
+            </h3>
+            
+            <p className="text-neutral-300">
+              In the turbulent waters of the Caribbean, brute military force alone will not win the war. <span className="text-amber-300 font-bold">Trade Routes are the backbone of any thriving empire</span>, offering essential economic leverage and diplomatic protection:
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
+              <div className="bg-slate-900/80 p-3.5 rounded-xl border border-amber-500/20 space-y-1.5">
+                <span className="text-yellow-400 font-bold flex items-center gap-1">
+                  💰 Continuous Passive Wealth
+                </span>
+                <p className="text-[11px] text-neutral-400">
+                  Island ports produce base taxes, but large fleets drain funds through troop and scout upkeeps. A single <span className="text-teal-300 font-semibold">Sloop trade route generates +100 Gold/tick</span>, while a <span className="text-amber-300 font-semibold">Schooner yields +250 Gold/tick</span> for BOTH partners every single game tick.
+                </p>
+              </div>
+
+              <div className="bg-slate-900/80 p-3.5 rounded-xl border border-amber-500/20 space-y-1.5">
+                <span className="text-emerald-400 font-bold flex items-center gap-1">
+                  🛡️ Binding Non-Aggression Pacts
+                </span>
+                <p className="text-[11px] text-neutral-400">
+                  When you accept an alliance trade route with another Captain, a binding Non-Aggression Pact is enforced. <span className="text-white font-semibold">Neither player can attack or raid the other's ports</span> while the route remains active, securing your flanks so you can expand elsewhere.
+                </p>
+              </div>
+
+              <div className="bg-slate-900/80 p-3.5 rounded-xl border border-amber-500/20 space-y-1.5">
+                <span className="text-rose-400 font-bold flex items-center gap-1">
+                  ⚓ Funding Late-Game Armadas
+                </span>
+                <p className="text-[11px] text-neutral-400">
+                  Constructing formidable Frigates and Galleons or upgrading fortifications requires thousands of Gold doubloons and Wood. Passive trade revenue guarantees you can afford heavy armaments and rapid fleet reconstruction.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-slate-950/80 p-3 rounded-xl border border-slate-800 text-[11px] space-y-1">
+              <div className="text-amber-400 font-bold">💡 Captain's Pro Tip for Trade Routes & Vessel Theft:</div>
+              <p className="text-neutral-400">
+                To propose a trade route, navigate to the <span className="text-white font-semibold">Commerce</span> tab or select your port, pick a destination island and assign a Sloop or Schooner from your docks. You can run routes between your own ports for guaranteed income or propose routes to rival Captains to forge powerful peace pacts! <span className="text-amber-300 font-bold">WARNING:</span> When any player dissolves an active trade route (enacting an Embargo), <span className="text-yellow-400 font-bold">they seize and steal the trading vessel (Sloop or Schooner) for their own fleet</span>, leaving their former ally empty-handed!
+              </p>
+            </div>
+          </div>
+
+          {/* SECTION 5: WARFARE RULES */}
           <div className="bg-slate-950/40 border border-slate-850 rounded-2xl p-4 space-y-2.5">
             <h4 className="font-bold text-slate-100 flex items-center gap-1.5 font-sans">
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
@@ -203,6 +254,8 @@ export const GameGuide: React.FC<GameGuideProps> = ({ isOpen, onClose }) => {
               <li><span className="text-white font-bold">Loot & Plunder:</span> Success requires <span className="text-yellow-400">Offence &gt; Defence</span>. Steals massive gold & goods.</li>
               <li><span className="text-white font-bold">Conquer Port:</span> Capture the port permanently. Requires <span className="text-rose-400">Offence &gt;= 3x Defence</span> and <span className="text-yellow-500">1 Governor</span>.</li>
               <li><span className="text-white font-bold">Raze & Cripple:</span> Cut production to 1/3 for 48 ticks. Requires <span className="text-orange-400">Offence &gt; Defence</span>.</li>
+              <li><span className="text-white font-bold">Cannon Crew Requirement:</span> Every cannon requires <span className="text-amber-300 font-bold">2 crew members</span> to operate in combat (8 Power per manned cannon). Unmanned cannons cannot be operated and provide <span className="text-red-400 font-semibold">0 Offence or Defence Power</span>.</li>
+              <li><span className="text-white font-bold">Fortification Siege Damage:</span> If an attacking force has at least <span className="text-amber-400 font-bold">50% of Defence Power</span> (Offence &gt;= 50% Defence), 1 level of fortifications is destroyed during the battle. Successful <span className="text-rose-400 font-bold">Raze attacks</span> destroy fortifications down to Level 1 (or to Level 0 if already Level 1).</li>
               <li><span className="text-white font-bold">Vessel Combat Weights:</span> Sloop = 10, Schooner = 30, Frigate = 80, Galleon = 200 Combat Power.</li>
             </ul>
           </div>

@@ -92,17 +92,17 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
         setIsAdminAuthenticated(true);
         localStorage.setItem('piracy_admin_key', keyToTest);
         if (!isSilent) {
-          setSuccessMsg('🔓 Ylläpitäjän tila avattu onnistuneesti!');
+          setSuccessMsg('🔓 Admin mode successfully unlocked!');
           setTimeout(() => setSuccessMsg(null), 3500);
         }
       } else {
         setIsAdminAuthenticated(false);
         if (!isSilent) {
-          setAuthError('Virheellinen ylläpitäjän salasana!');
+          setAuthError('Invalid admin passcode!');
         }
       }
     } catch (e) {
-      if (!isSilent) setAuthError('Yhteysvirhe salasanaa vahvistettaessa.');
+      if (!isSilent) setAuthError('Connection error while verifying passcode.');
     } finally {
       setIsVerifying(false);
     }
@@ -170,10 +170,10 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
     setSuccessMsg(null);
     try {
       await onManualTick(adminPasscode);
-      setSuccessMsg('Suoritettiin +1 pelitiki onnistuneesti!');
+      setSuccessMsg('Executed +1 game tick successfully!');
       setTimeout(() => setSuccessMsg(null), 3000);
     } catch (e: any) {
-      alert(e.message || 'Tikityksen ajo epäonnistui');
+      alert(e.message || 'Manual tick failed');
     }
   };
 
@@ -181,13 +181,13 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
     setSuccessMsg(null);
     try {
       await onChangeSpeed(mode, adminPasscode);
-      let speedText = '15 minuuttia (Normaali)';
-      if (mode === 'fast') speedText = '30 sekuntia (Nopea testaus)';
-      if (mode === 'debug') speedText = '5 minuuttia (Debug/Testaus)';
-      setSuccessMsg(`Tikitysväliksi asetettu ${speedText}`);
+      let speedText = '15 minutes (Normal)';
+      if (mode === 'fast') speedText = '30 seconds (Fast testing)';
+      if (mode === 'debug') speedText = '5 minutes (Debug/Testing)';
+      setSuccessMsg(`Tick interval set to ${speedText}`);
       setTimeout(() => setSuccessMsg(null), 3500);
     } catch (e: any) {
-      alert(e.message || 'Nopeuden muutos epäonnistui');
+      alert(e.message || 'Failed to change speed');
     }
   };
 
@@ -195,10 +195,10 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
     setSuccessMsg(null);
     try {
       await onRestartNPCs(adminPasscode);
-      setSuccessMsg('NPC-faktiot re-starrattu! Kaikki NPC-satamat nollattu heikommin vartioiduiksi.');
+      setSuccessMsg('NPC factions restarted! All NPC ports reset with lighter defenses.');
       setTimeout(() => setSuccessMsg(null), 4000);
     } catch (e: any) {
-      alert(e.message || 'NPC-faktioiden nollaus epäonnistui');
+      alert(e.message || 'Failed to reset NPC factions');
     }
   };
 
@@ -208,17 +208,22 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
       const nextPaused = !isPaused;
       await onTogglePause(nextPaused, adminPasscode);
       setSuccessMsg(nextPaused 
-        ? '🚨 Pelin tikitys ja tietokantasynkronointi TAUOTETTU.' 
-        : '🟢 Pelin tikitys ja tietokantasynkronointi JATKUU!'
+        ? '🚨 Game tick loop and database sync PAUSED.' 
+        : '🟢 Game tick loop and database sync RESUMED!'
       );
       setTimeout(() => setSuccessMsg(null), 4000);
     } catch (e: any) {
-      alert(e.message || 'Pelin tauotus epäonnistui');
+      alert(e.message || 'Failed to toggle pause state');
     }
   };
 
   const handleResetRoundAction = async () => {
-    if (!confirm('VAROITUS: Haluatko varmasti nollata koko pelikierroksen? Kaikki saaret ja laivastot luodaan uudelleen, mutta pelaajatilit säilytetään.')) {
+    const inputName = prompt('Enter new round name:', gameStateFull?.roundName || 'Seven Seas');
+    if (inputName === null) {
+      return; // User cancelled
+    }
+    const finalRoundName = inputName.trim() || 'Seven Seas';
+    if (!confirm(`WARNING: Are you sure you want to reset the entire game round? All player accounts and ports will be wiped, and new round "Era of ${finalRoundName}" will start.`)) {
       return;
     }
     setSuccessMsg(null);
@@ -228,19 +233,20 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
         headers: {
           'Content-Type': 'application/json',
           'x-admin-key': adminPasscode
-        }
+        },
+        body: JSON.stringify({ roundName: finalRoundName })
       });
       if (res.ok) {
         const data = await res.json();
-        setSuccessMsg('🔄 Pelikierros nollattu onnistuneesti!');
+        setSuccessMsg(`🔄 Game round "Era of ${finalRoundName}" reset and initialized successfully!`);
         onRestoreState(data.state);
         setTimeout(() => setSuccessMsg(null), 5000);
       } else {
         const err = await res.json();
-        alert(`Kierroksen nollaus epäonnistui: ${err.error}`);
+        alert(`Failed to reset round: ${err.error}`);
       }
     } catch (e: any) {
-      alert(`Virhe nollattaessa kierrosta: ${e.message}`);
+      alert(`Error resetting round: ${e.message}`);
     }
   };
 
@@ -253,11 +259,11 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
       document.body.appendChild(downloadAnchor);
       downloadAnchor.click();
       downloadAnchor.remove();
-      setSuccessMsg('💾 Pelitilanteen varmuuskopio ladattu JSON-tiedostona!');
+      setSuccessMsg('💾 Game state backup downloaded as JSON file!');
       setTimeout(() => setSuccessMsg(null), 4000);
     } catch (e) {
       console.error(e);
-      alert('Varmuuskopion luonti epäonnistui.');
+      alert('Failed to generate backup.');
     }
   };
 
@@ -270,7 +276,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
         const content = e.target?.result as string;
         const parsed = JSON.parse(content);
         if (!parsed.ports || !parsed.players) {
-          throw new Error('Virheellinen backup-muoto! Puuttuu players tai ports.');
+          throw new Error('Invalid backup format! Missing players or ports.');
         }
         
         const res = await fetch('/api/game/dev-restore', {
@@ -284,15 +290,15 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
         
         if (res.ok) {
           const data = await res.json();
-          setSuccessMsg('🎉 Pelitilanne palautettu onnistuneesti varmuuskopiosta!');
+          setSuccessMsg('🎉 Game state restored successfully from backup!');
           onRestoreState(data.state);
           setTimeout(() => setSuccessMsg(null), 5000);
         } else {
           const err = await res.json();
-          alert(`Palautus epäonnistui: ${err.error}`);
+          alert(`Backup restore failed: ${err.error}`);
         }
       } catch (err) {
-        alert(`Virheellinen varmuuskopiotiedosto: ${err instanceof Error ? err.message : String(err)}`);
+        alert(`Invalid backup file: ${err instanceof Error ? err.message : String(err)}`);
       }
     };
     reader.readAsText(file);
@@ -322,7 +328,9 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-2xl">
           <div className="flex items-center gap-2 mb-4">
             <Trophy className="w-5 h-5 text-yellow-500 animate-bounce" />
-            <h3 className="text-xs font-black uppercase text-slate-500 tracking-widest">Pirate Leaderboard</h3>
+            <h3 className="text-xs font-black uppercase text-slate-500 tracking-widest">
+              Era of {gameStateFull?.roundName || 'Seven Seas'} Leaderboard
+            </h3>
           </div>
 
           <div className="space-y-2 max-h-[480px] overflow-y-auto pr-1">
@@ -400,17 +408,17 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
               <Settings className="w-5 h-5 text-amber-500" />
               <div>
                 <h3 className="text-xs font-black uppercase text-amber-400 tracking-widest flex items-center gap-1.5">
-                  Ylläpitäjän Ohjauspaneeli
+                  Admin Control Panel
                   {isAdminAuthenticated ? <Unlock className="w-3.5 h-3.5 text-emerald-400" /> : <Lock className="w-3.5 h-3.5 text-rose-400" />}
                 </h3>
-                <p className="text-[10px] text-slate-400 font-mono">Salasanalla suojattu admin-hallinta</p>
+                <p className="text-[10px] text-slate-400 font-mono">Password-protected admin controls</p>
               </div>
             </div>
             <button
               type="button"
               className="text-xs text-amber-400 hover:text-amber-300 font-mono underline bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/20"
             >
-              {devModeExpanded ? 'Piilota ▲' : 'Avaa ▼'}
+              {devModeExpanded ? 'Hide ▲' : 'Open ▼'}
             </button>
           </div>
 
@@ -435,7 +443,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                 >
                   <div className="flex items-center gap-2 text-rose-400 text-xs font-mono">
                     <Lock className="w-4 h-4 flex-shrink-0" />
-                    <span>Syötä ylläpitäjän salasana:</span>
+                    <span>Enter Admin Passcode:</span>
                   </div>
 
                   <div className="flex gap-2">
@@ -443,7 +451,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                       type="password"
                       value={adminPasscode}
                       onChange={(e) => setAdminPasscode(e.target.value)}
-                      placeholder="Admin-salasana..."
+                      placeholder="Admin passcode..."
                       className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 font-mono"
                     />
                     <button
@@ -451,7 +459,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                       disabled={isVerifying || !adminPasscode.trim()}
                       className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs px-4 py-2 rounded-xl transition flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
                     >
-                      {isVerifying ? 'TARKISTETAAN...' : 'AVAA'}
+                      {isVerifying ? 'VERIFYING...' : 'UNLOCK'}
                     </button>
                   </div>
 
@@ -463,7 +471,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                   )}
 
                   <p className="text-[10px] text-slate-500 font-mono">
-                    Oletussalasana: <code className="text-amber-400/90 bg-slate-900 px-1 py-0.5 rounded">pirate-admin-1234</code> (voidaan vaihtaa muuttujalla <code>ADMIN_SECRET</code>).
+                    Default passcode: <code className="text-amber-400/90 bg-slate-900 px-1 py-0.5 rounded">pirate-admin-1234</code> (can be customized via <code>ADMIN_SECRET</code>).
                   </p>
                 </form>
               ) : (
@@ -472,7 +480,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                   <div className="flex items-center justify-between text-[11px] font-mono bg-emerald-500/10 border border-emerald-500/20 px-3 py-2 rounded-xl text-emerald-300">
                     <span className="flex items-center gap-1.5 font-bold">
                       <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                      Ylläpitäjä tunnistettu
+                      Admin Verified
                     </span>
                     <button
                       type="button"
@@ -483,7 +491,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                       }}
                       className="text-slate-400 hover:text-rose-400 underline text-[10px] cursor-pointer"
                     >
-                      Lukitse paneeli
+                      Lock Panel
                     </button>
                   </div>
 
@@ -496,7 +504,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                       className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 p-2.5 rounded-xl flex items-center justify-center gap-2 transition cursor-pointer"
                     >
                       <Play className="w-3.5 h-3.5 text-emerald-400" />
-                      Aja +1 Tikitys
+                      Run +1 Tick
                     </button>
 
                     {/* Pause Toggle */}
@@ -510,7 +518,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                       }`}
                     >
                       {isPaused ? <Play className="w-3.5 h-3.5" /> : <Pause className="w-3.5 h-3.5" />}
-                      {isPaused ? 'Jatka peliä' : 'Tauota peli'}
+                      {isPaused ? 'Resume Game' : 'Pause Game'}
                     </button>
 
                     {/* Re-seed NPCs */}
@@ -520,7 +528,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                       className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 p-2.5 rounded-xl flex items-center justify-center gap-2 transition cursor-pointer"
                     >
                       <RefreshCw className="w-3.5 h-3.5 text-amber-400" />
-                      Nollaa NPC-alueet
+                      Reset NPC Factions
                     </button>
 
                     {/* Download Backup */}
@@ -530,14 +538,14 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                       className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 p-2.5 rounded-xl flex items-center justify-center gap-2 transition cursor-pointer"
                     >
                       <Download className="w-3.5 h-3.5 text-cyan-400" />
-                      Lataa Backup
+                      Download Backup
                     </button>
                   </div>
 
                   {/* Tick Speed Selector */}
                   <div className="bg-neutral-950 p-3 rounded-2xl border border-neutral-800 space-y-2">
                     <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block">
-                      Tikitysväli (Nopeus):
+                      Tick Speed Interval:
                     </span>
                     <div className="grid grid-cols-3 gap-1.5 text-[10.5px] font-mono">
                       <button
@@ -549,7 +557,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                             : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
                         }`}
                       >
-                        15m (Normi)
+                        15m (Normal)
                       </button>
                       <button
                         type="button"
@@ -571,7 +579,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                             : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
                         }`}
                       >
-                        30s (Nopea)
+                        30s (Fast)
                       </button>
                     </div>
                   </div>
@@ -580,7 +588,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                   <div className="pt-2 border-t border-slate-800/60 flex items-center justify-between gap-2">
                     <label className="cursor-pointer bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-3 py-1.5 rounded-xl text-[11px] font-mono flex items-center gap-1.5 transition">
                       <Upload className="w-3.5 h-3.5 text-purple-400" />
-                      Palauta varmuuskopio
+                      Restore Backup
                       <input
                         type="file"
                         accept=".json"
@@ -595,7 +603,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                       className="bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 px-3 py-1.5 rounded-xl text-[11px] font-mono flex items-center gap-1.5 transition cursor-pointer"
                     >
                       <RotateCcw className="w-3.5 h-3.5 text-rose-400" />
-                      Nollaa Kierros
+                      Reset Round
                     </button>
                   </div>
                 </div>

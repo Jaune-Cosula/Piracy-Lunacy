@@ -1,0 +1,58 @@
+Governor pricing increased to 1000 gold per conquered port. So when you have 2 ports, governor costs 4000 gold when having 3 ports Governor cost 5000 gold etc.
+-------------------
+When you register, game makes sure you dont spawn to port which is under attack.
+---------------
+    Alliance-Based Proposals & Acceptance:
+
+        Trade routes can now only be established between different players.
+
+        Initiating a route sends a Trade Proposal to the target player with details on the ports and dedicated ship type (Sloop or Schooner).
+
+        The receiving player can Accept or Decline the trade proposal.
+
+    Non-Aggression Pact & Non-Attack Enforcement:
+
+        Once a trade pact is accepted and active, an automatic Non-Aggression Pact is established between both players.
+
+        The server blocks any military attack launches (/api/game/attack) between captains who have an active trade pact.
+
+        The Military Tab displays a Non-Aggression Alert banner and disables attack launches against trade partners.
+
+    Shared Economic Benefits:
+
+        Both players in an active trade pact receive recurring gold per tick (+100 Gold/tick for Sloops, +250 Gold/tick for Schooners).
+
+    Trade Embargo & Counter-Runaway Mechanism:
+
+        Either player can enact a Trade Embargo (cancel/dissolve the trade route) at any time from the Commerce tab.
+
+        Breaking the pact terminates recurring gold income for both parties and restores the ability to launch military attacks against each other.
+        --------------------------
+            Conquest Governor Garrisoning: When an attack_conquer campaign succeeds, 1 governor is consumed to establish control of the newly conquered port. Any additional/extra governors in the attacking fleet are now automatically stationed into the garrison of the newly conquered port alongside the surviving crew, cannons, and warships instead of returning to the home port.
+            ------------------
+     Wood-Heavy Cost Structure: Reversed the cost requirements so fortifications cost significantly less Gold and much more Wood/Timber (Goods).
+
+    Progressive Level Scaling: Each successive fortification level now costs progressively more Gold and Wood:
+
+        Level 1 → 2: 100 Gold & 400 Wood
+
+        Level 2 → 3: 150 Gold & 800 Wood
+
+        Level 3 → 4: 200 Gold & 1200 Wood
+
+        Level 4 → 5: 250 Gold & 1600 Wood
+
+    Dynamic UI Display: The Garrison recruitment panel now dynamically displays the exact Gold & Wood required for the upcoming fortification level.
+    ----------------------
+    GAme Manual update (trade route)
+    ---------------------
+        Battle Siege Damage (50% Threshold): Any attack where the attacking force has at least 50% of the target's Defence Power (Offence >= 50% Defence) now inflicts structural damage on the port's fortifications, reducing the fortification level by 1 (down to Level 0).
+
+    Successful Raze Destruction: A successful Raze attack devastates the port's defenses, reducing fortifications to Level 1 (or down to Level 0 if they were already at Level 1).
+
+    Game Guide Integration: Added the Fortification Siege Damage rules under Garrison Combat Mathematics in the Captain's Manual (GameGuide.tsx).
+    ---------------
+    
+    
+    
+            

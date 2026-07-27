@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { GamePort, Player, SHIP_CONFIGS, COST_TROOP, COST_CANNON, COST_SCOUT, COST_GOVERNOR, COST_FORTIFICATION, TradeRoute } from '../types.ts';
+import { GamePort, Player, SHIP_CONFIGS, COST_TROOP, COST_CANNON, COST_SCOUT, COST_GOVERNOR, getGovernorCost, COST_FORTIFICATION, getFortificationCost, TradeRoute } from '../types.ts';
 import { 
   DollarSign, 
   Package, 
@@ -20,9 +20,12 @@ interface DashboardProps {
   player: Player;
   ports: Record<string, GamePort>;
   tradeRoutes: TradeRoute[];
+  players?: Record<string, Player>;
   onBuildShip: (portId: string, shipSize: string, count: number) => Promise<void>;
   onTrainUnit: (portId: string, type: string, count: number) => Promise<void>;
-  onEstablishTrade: (portAId: string, portBId: string, shipType: 'sloop' | 'schooner') => Promise<void>;
+  onEstablishTrade: (proposerPortId: string, recipientPortId: string, shipType: 'sloop' | 'schooner') => Promise<void>;
+  onAcceptTrade?: (routeId: string) => Promise<void>;
+  onDeclineTrade?: (routeId: string) => Promise<void>;
   onCancelTrade: (routeId: string) => Promise<void>;
   selectedPortId: string | null;
   onSelectPort: (portId: string) => void;
@@ -32,9 +35,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
   player,
   ports,
   tradeRoutes,
+  players = {},
   onBuildShip,
   onTrainUnit,
   onEstablishTrade,
+  onAcceptTrade,
+  onDeclineTrade,
   onCancelTrade,
   selectedPortId,
   onSelectPort,
@@ -95,7 +101,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
-  const currentFortCost = selectedPort ? COST_FORTIFICATION : 0;
+  const nextFortCost = selectedPort && selectedPort.fortificationLevel < 5 
+    ? getFortificationCost(selectedPort.fortificationLevel) 
+    : { goldCost: 0, goodsCost: 0 };
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
@@ -257,7 +265,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <div className="text-[9px] font-mono text-neutral-400">Pirate Crew (Cap: {maxCrewCapacity})</div>
                 </div>
                 <div className="bg-neutral-950 p-2.5 rounded-lg border border-neutral-800 text-center">
-                  <div className="text-lg font-bold font-mono text-white">{selectedPort.cannons}</div>
+                  <div className="text-lg font-bold font-mono text-white">
+                    {selectedPort.cannons}
+                    {Math.min(selectedPort.cannons, Math.floor(selectedPort.troops / 2)) < selectedPort.cannons && (
+                      <span className="text-[10px] text-amber-400 font-normal block text-center">
+                        ({Math.min(selectedPort.cannons, Math.floor(selectedPort.troops / 2))} Manned)
+                      </span>
+                    )}
+                  </div>
                   <div className="text-[9px] font-mono text-neutral-400">Cannons (Cap: {maxCannonCapacity})</div>
                 </div>
                 <div className="bg-neutral-950 p-2.5 rounded-lg border border-neutral-800 text-center">
@@ -452,7 +467,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <div className="flex items-center justify-between gap-3 p-2 bg-neutral-950 rounded border border-neutral-800">
                     <div>
                       <div className="font-bold text-neutral-200">Governor (Conquer Admin)</div>
-                      <div className="text-[10px] text-yellow-500">Cost: {COST_GOVERNOR} Gold (Very Expensive)</div>
+                      <div className="text-[10px] text-yellow-500">
+                        Cost: {getGovernorCost(playerPorts.length).toLocaleString()} Gold ({playerPorts.length} {playerPorts.length === 1 ? 'port' : 'ports'} owned)
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <input 
@@ -475,7 +492,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <div className="flex items-center justify-between gap-3 p-2 bg-neutral-950 rounded border border-neutral-800">
                     <div>
                       <div className="font-bold text-neutral-200">Fortification Wall</div>
-                      <div className="text-[10px] text-neutral-400">Cost: {currentFortCost}G & 100W | Max Level 5</div>
+                      <div className="text-[10px] text-neutral-400">
+                        {selectedPort.fortificationLevel >= 5 
+                          ? 'Maxed Level 5' 
+                          : `Cost: ${nextFortCost.goldCost}G & ${nextFortCost.goodsCost}W (Lvl ${selectedPort.fortificationLevel} → ${selectedPort.fortificationLevel + 1})`}
+                      </div>
                     </div>
                     <button 
                       onClick={() => handleAction(() => onTrainUnit(selectedPort.id, 'fort', 1))}
@@ -544,104 +565,244 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
             </div>
 
-            {/* Trade Routes establishment */}
+            {/* Trade Routes & Alliance Pacts */}
             <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-2xl space-y-4">
               <h3 className="text-xs font-black uppercase text-slate-500 tracking-widest flex items-center gap-1.5">
                 <Compass className="w-4 h-4 text-yellow-500" />
-                Commercial Trade Routes
+                Alliance Trade Pacts & Non-Aggression Routes
               </h3>
 
-              <p className="text-[11px] font-mono text-neutral-400">
-                Generate additional recurring gold per tick by establishing a trade route between two ports you control. Requires dedicating 1 Sloop (+60G/t) or 1 Schooner (+150G/t) as a cargo ship.
-              </p>
+              <div className="p-3 bg-neutral-950/80 rounded-xl border border-neutral-800 text-[11px] font-mono text-neutral-300 space-y-1.5 leading-relaxed">
+                <p className="font-bold text-amber-400">🤝 Trade Agreements are Non-Aggression Alliances between Players!</p>
+                <p className="text-neutral-400">
+                  You can establish trade routes <strong>only with other captains</strong>. Propose a route from one of your ports to another captain's port. Once accepted, <strong>both captains receive recurring gold</strong> (+100G/t for Sloop, +250G/t for Schooner) and an <strong>automatic Non-Aggression Pact</strong> is sealed.
+                </p>
+                <p className="text-neutral-400 text-[10px]">
+                  💡 <em>Strategy Tip:</em> Neither captain can launch attacks against each other while the trade pact is active. Placing a route under <strong>Trade Embargo</strong> (dissolving the trade route) seizes and <strong>steals the trading vessel for your own fleet</strong>, depriving your former ally of their ship and lifting the non-aggression pact!
+                </p>
+              </div>
 
-              {/* Establish trade route panel */}
-              {playerPorts.length < 2 ? (
-                <div className="p-3 bg-neutral-950/40 rounded border border-neutral-800 text-[11px] font-mono text-neutral-500 flex items-center gap-1.5">
-                  <Lock className="w-3.5 h-3.5" />
-                  <span>You must own at least TWO ports to establish trade routes! Go conquer more ports first.</span>
-                </div>
-              ) : (
-                <div className="p-3 bg-neutral-950 rounded-lg border border-neutral-800 flex flex-wrap items-center gap-4 text-xs font-mono">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-neutral-400">Trade from {selectedPort.name} to:</span>
-                    <select
-                      value={tradeTargetPortId}
-                      onChange={(e) => setTradeTargetPortId(e.target.value)}
-                      className="bg-slate-900 border border-neutral-700 rounded px-2 py-1 text-white text-xs"
-                    >
-                      <option value="">-- Choose Target Port --</option>
-                      {playerPorts
-                        .filter(p => p.id !== selectedPort.id)
-                        .map(p => (
-                          <option key={p.id} value={p.id}>{p.name}</option>
-                        ))
-                      }
-                    </select>
+              {/* Propose Trade Route Panel */}
+              {(() => {
+                const otherPlayerPorts = (Object.values(ports) as GamePort[]).filter(p => p.ownerId && p.ownerId !== player.id && p.ownerId !== 'npc');
+
+                if (otherPlayerPorts.length === 0) {
+                  return (
+                    <div className="p-3 bg-neutral-950/40 rounded border border-neutral-800 text-[11px] font-mono text-neutral-500 flex items-center gap-1.5">
+                      <Lock className="w-3.5 h-3.5" />
+                      <span>No other player ports found in the archipelago yet. Wait for other players to register or settle ports!</span>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="p-3 bg-neutral-950 rounded-xl border border-neutral-800 space-y-3 font-mono text-xs">
+                    <div className="font-bold text-teal-400 text-[11px] flex items-center gap-1.5">
+                      <Plus className="w-3.5 h-3.5" /> PROPOSE NEW TRADE PACT
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-4">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-neutral-400">From (Your Port):</span>
+                        <select
+                          value={selectedPort?.id || ''}
+                          onChange={(e) => onSelectPort(e.target.value)}
+                          className="bg-slate-900 border border-neutral-700 rounded px-2 py-1 text-white text-xs"
+                        >
+                          {playerPorts.map(p => (
+                            <option key={p.id} value={p.id}>{p.name} (Sloop: {p.sloop}, Schooner: {p.schooner})</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-neutral-400">To Partner Port:</span>
+                        <select
+                          value={tradeTargetPortId}
+                          onChange={(e) => setTradeTargetPortId(e.target.value)}
+                          className="bg-slate-900 border border-neutral-700 rounded px-2 py-1 text-white text-xs"
+                        >
+                          <option value="">-- Choose Other Player Port --</option>
+                          {otherPlayerPorts.map(p => {
+                            const ownerName = players[p.ownerId]?.username || p.ownerName || 'Unknown Captain';
+                            return (
+                              <option key={p.id} value={p.id}>
+                                {p.name} (Capt. {ownerName})
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-neutral-400">Ship:</span>
+                        <select
+                          value={tradeShipType}
+                          onChange={(e) => setTradeShipType(e.target.value as any)}
+                          className="bg-slate-900 border border-neutral-700 rounded px-2 py-1 text-white text-xs"
+                        >
+                          <option value="sloop">Sloop (+100 Gold/t to Both)</option>
+                          <option value="schooner">Schooner (+250 Gold/t to Both)</option>
+                        </select>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          if (!selectedPort || !tradeTargetPortId) return;
+                          handleAction(() => onEstablishTrade(selectedPort.id, tradeTargetPortId, tradeShipType));
+                        }}
+                        disabled={!selectedPort || !tradeTargetPortId}
+                        className="bg-amber-600 hover:bg-amber-500 disabled:bg-neutral-800 disabled:text-neutral-500 font-bold px-3 py-1 rounded text-xs text-white transition flex items-center gap-1"
+                      >
+                        Send Proposal
+                      </button>
+                    </div>
                   </div>
+                );
+              })()}
 
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-neutral-400">Using Ship:</span>
-                    <select
-                      value={tradeShipType}
-                      onChange={(e) => setTradeShipType(e.target.value as any)}
-                      className="bg-slate-900 border border-neutral-700 rounded px-2 py-1 text-white text-xs"
-                    >
-                      <option value="sloop">Sloop (+60 Gold/Tick)</option>
-                      <option value="schooner">Schooner (+150 Gold/Tick)</option>
-                    </select>
-                  </div>
+              {/* Pending Incoming Trade Offers */}
+              {(() => {
+                const incomingOffers = tradeRoutes.filter(r => r.recipientPlayerId === player.id && r.status === 'pending');
+                if (incomingOffers.length === 0) return null;
 
-                  <button
-                    onClick={() => {
-                      if (!tradeTargetPortId) return;
-                      handleAction(() => onEstablishTrade(selectedPort.id, tradeTargetPortId, tradeShipType));
-                    }}
-                    disabled={!tradeTargetPortId}
-                    className="bg-yellow-600 hover:bg-yellow-500 disabled:bg-neutral-800 disabled:text-neutral-500 font-bold px-3 py-1 rounded text-xs text-white transition flex items-center gap-1"
-                  >
-                    <Plus className="w-4 h-4" /> Establish
-                  </button>
-                </div>
-              )}
+                return (
+                  <div className="space-y-2 border-t border-amber-500/20 pt-3">
+                    <h4 className="text-[10px] font-mono text-amber-400 font-bold tracking-wider flex items-center gap-1">
+                      📩 INCOMING TRADE PROPOSALS ({incomingOffers.length})
+                    </h4>
+                    <div className="space-y-2">
+                      {incomingOffers.map(route => {
+                        const proposerPort = ports[route.proposerPortId || route.portAId];
+                        const recipientPort = ports[route.recipientPortId || route.portBId];
+                        const yieldGold = route.shipType === 'schooner' ? 250 : 100;
 
-              {/* Active routes directory */}
-              <div className="space-y-2 border-t border-neutral-800 pt-3">
-                <h4 className="text-[10px] font-mono text-neutral-400 font-bold tracking-wider">ACTIVE COMMERCIAL LANES ({activeRoutes.length})</h4>
-                
-                {activeRoutes.length === 0 ? (
-                  <p className="text-neutral-500 text-[11px] font-mono italic">No commercial lanes are currently active.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {activeRoutes.map(route => {
-                      const portA = ports[route.portAId];
-                      const portB = ports[route.portBId];
-                      if (!portA || !portB) return null;
-                      
-                      const bonus = route.shipType === 'schooner' ? 150 : 60;
-                      
-                      return (
-                        <div key={route.id} className="flex items-center justify-between p-2 bg-neutral-950/60 rounded border border-neutral-850 text-xs font-mono">
-                          <div className="flex items-center gap-2">
-                            <span className="text-teal-400 font-bold">⛵ {route.shipType.toUpperCase()}</span>
-                            <span className="text-neutral-300">{portA.name} ── {portB.name}</span>
+                        return (
+                          <div key={route.id} className="flex flex-wrap items-center justify-between p-2.5 bg-amber-950/20 rounded-xl border border-amber-500/30 text-xs font-mono gap-2">
+                            <div className="space-y-0.5">
+                              <div className="text-amber-300 font-bold flex items-center gap-1.5">
+                                📜 Alliance Proposal from Captain {route.proposerPlayerName}
+                              </div>
+                              <div className="text-neutral-400 text-[11px]">
+                                Route: {proposerPort ? proposerPort.name : route.proposerPortName} ── {recipientPort ? recipientPort.name : route.recipientPortName} ({route.shipType.toUpperCase()})
+                              </div>
+                              <div className="text-yellow-400 text-[10px] font-semibold">
+                                Yields +{yieldGold} Gold/tick to both players & seals a Non-Aggression Pact
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              {onAcceptTrade && (
+                                <button
+                                  onClick={() => handleAction(() => onAcceptTrade(route.id))}
+                                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1 rounded text-[11px] transition"
+                                >
+                                  Accept Pact
+                                </button>
+                              )}
+                              {onDeclineTrade && (
+                                <button
+                                  onClick={() => handleAction(() => onDeclineTrade(route.id))}
+                                  className="bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-bold px-2.5 py-1 rounded text-[11px] transition"
+                                >
+                                  Decline
+                                </button>
+                              )}
+                            </div>
                           </div>
-                          <div className="flex items-center gap-3">
-                            <span className="text-yellow-500 font-bold">+{bonus} Gold/Tick</span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Pending Outgoing Trade Offers */}
+              {(() => {
+                const outgoingOffers = tradeRoutes.filter(r => (r.proposerPlayerId || r.ownerId) === player.id && r.status === 'pending');
+                if (outgoingOffers.length === 0) return null;
+
+                return (
+                  <div className="space-y-2 border-t border-neutral-800 pt-3">
+                    <h4 className="text-[10px] font-mono text-neutral-400 font-bold tracking-wider flex items-center gap-1">
+                      📤 OUTGOING PROPOSALS AWAITING RESPONSE ({outgoingOffers.length})
+                    </h4>
+                    <div className="space-y-2">
+                      {outgoingOffers.map(route => {
+                        return (
+                          <div key={route.id} className="flex items-center justify-between p-2 bg-neutral-950/60 rounded border border-neutral-850 text-xs font-mono">
+                            <div className="flex items-center gap-2">
+                              <span className="text-amber-400 font-bold">⏳ PENDING</span>
+                              <span className="text-neutral-300">Sent to Capt. {route.recipientPlayerName} ({route.proposerPortName} ── {route.recipientPortName})</span>
+                            </div>
                             <button
                               onClick={() => handleAction(() => onCancelTrade(route.id))}
-                              className="text-neutral-400 hover:text-red-400 hover:bg-red-500/10 p-1 rounded transition"
-                              title="Dissolve Route & Reclaim Ship"
+                              className="text-neutral-400 hover:text-red-400 hover:bg-red-500/10 px-2 py-1 rounded text-[10px] border border-neutral-800 transition"
                             >
-                              <X className="w-4 h-4" />
+                              Withdraw Proposal
                             </button>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
-                )}
-              </div>
+                );
+              })()}
+
+              {/* Active Alliance Trade Routes Directory */}
+              {(() => {
+                const activePacts = tradeRoutes.filter(r => 
+                  (r.status === 'active' || r.active) && 
+                  ((r.proposerPlayerId || r.ownerId) === player.id || r.recipientPlayerId === player.id)
+                );
+
+                return (
+                  <div className="space-y-2 border-t border-neutral-800 pt-3">
+                    <h4 className="text-[10px] font-mono text-neutral-400 font-bold tracking-wider flex items-center justify-between">
+                      <span>ACTIVE ALLIANCE TRADE PACTS ({activePacts.length})</span>
+                      <span className="text-[9px] text-teal-400">🛡️ NON-AGGRESSION RESTRICTION IN EFFECT</span>
+                    </h4>
+
+                    {activePacts.length === 0 ? (
+                      <p className="text-neutral-500 text-[11px] font-mono italic">No commercial alliance pacts are currently active.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {activePacts.map(route => {
+                          const partnerName = (route.proposerPlayerId || route.ownerId) === player.id ? route.recipientPlayerName : route.proposerPlayerName;
+                          const portA = ports[route.proposerPortId || route.portAId];
+                          const portB = ports[route.recipientPortId || route.portBId];
+                          const bonus = route.shipType === 'schooner' ? 250 : 100;
+
+                          return (
+                            <div key={route.id} className="flex flex-wrap items-center justify-between p-2.5 bg-neutral-950 rounded-xl border border-teal-500/30 text-xs font-mono gap-2">
+                              <div className="space-y-0.5">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-teal-400 font-bold">⛵ {route.shipType.toUpperCase()}</span>
+                                  <span className="text-neutral-200 font-bold">Alliance with Capt. {partnerName}</span>
+                                </div>
+                                <div className="text-neutral-400 text-[11px]">
+                                  {portA ? portA.name : route.proposerPortName} ── {portB ? portB.name : route.recipientPortName}
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-3">
+                                <span className="text-yellow-400 font-bold">+{bonus} Gold/Tick</span>
+                                <button
+                                  onClick={() => handleAction(() => onCancelTrade(route.id))}
+                                  className="text-red-400 hover:text-white hover:bg-red-600/80 px-2.5 py-1 bg-red-950/40 rounded border border-red-500/30 transition text-[10px] font-bold"
+                                  title="Break Agreement, Enact Embargo & Steal Trading Vessel"
+                                >
+                                  EMBARGO & STEAL SHIP
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
             </div>
 

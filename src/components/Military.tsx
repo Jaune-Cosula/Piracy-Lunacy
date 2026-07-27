@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { GamePort, Player, SHIP_CONFIGS, FleetCampaign, ScoutReport } from '../types.ts';
+import { GamePort, Player, SHIP_CONFIGS, FleetCampaign, ScoutReport, TradeRoute } from '../types.ts';
 import { 
   Swords, 
   Compass, 
@@ -14,7 +14,8 @@ import {
   Flame,
   Coins,
   CheckCircle2,
-  Lock
+  Lock,
+  RotateCcw
 } from 'lucide-react';
 
 interface MilitaryProps {
@@ -22,9 +23,12 @@ interface MilitaryProps {
   ports: Record<string, GamePort>;
   campaigns: FleetCampaign[];
   scoutReports: ScoutReport[];
+  tradeRoutes?: TradeRoute[];
+  players?: Record<string, Player>;
   onLaunchAttack: (payload: any) => Promise<void>;
   onLaunchScout: (originPortId: string, targetPortId: string) => Promise<void>;
   onLaunchTransfer: (payload: any) => Promise<void>;
+  onCancelCampaign?: (campaignId: string) => Promise<void>;
   selectedPortId: string | null;
   onSelectPort: (portId: string) => void;
 }
@@ -34,9 +38,12 @@ export const Military: React.FC<MilitaryProps> = ({
   ports,
   campaigns,
   scoutReports,
+  tradeRoutes = [],
+  players = {},
   onLaunchAttack,
   onLaunchScout,
   onLaunchTransfer,
+  onCancelCampaign,
   selectedPortId,
   onSelectPort,
 }) => {
@@ -83,6 +90,16 @@ export const Military: React.FC<MilitaryProps> = ({
   // Selected Target Port Details
   const targetPort = targetPortId ? ports[targetPortId] : null;
 
+  // Non-Aggression pact check for selected target port
+  const hasActiveTradePact = useMemo(() => {
+    if (!targetPort || !targetPort.ownerId || targetPort.ownerId === 'npc' || targetPort.ownerId === player.id) return false;
+    return tradeRoutes.some(r => 
+      (r.status === 'active' || r.active) && 
+      (((r.proposerPlayerId || r.ownerId) === player.id && r.recipientPlayerId === targetPort.ownerId) ||
+       (r.recipientPlayerId === player.id && (r.proposerPlayerId || r.ownerId) === targetPort.ownerId))
+    );
+  }, [targetPort, tradeRoutes, player.id]);
+
   // Find latest scout report for targetPortId to display intelligence briefing
   const latestReportForTarget = useMemo(() => {
     if (!targetPortId) return null;
@@ -113,15 +130,16 @@ export const Military: React.FC<MilitaryProps> = ({
                      (f * SHIP_CONFIGS.frigate.cargoCapacity) +
                      (g * SHIP_CONFIGS.galleon.cargoCapacity);
 
-    // Fleet Combat power: Ships + Crew (3 each) + Cannons (8 each)
+    // Fleet Combat power: Ships + Crew (3 each) + Manned Cannons (8 each, requires 2 crew per cannon)
+    const mannedCannons = Math.min(cannonsToSend, Math.floor(troopsToSend / 2));
     const combatPower = (s * SHIP_CONFIGS.sloop.combatPower) +
                         (sc * SHIP_CONFIGS.schooner.combatPower) +
                         (f * SHIP_CONFIGS.frigate.combatPower) +
                         (g * SHIP_CONFIGS.galleon.combatPower) +
                         (troopsToSend * 3) +
-                        (cannonsToSend * 8);
+                        (mannedCannons * 8);
 
-    return { crewCap, cannonCap, cargoCap, combatPower };
+    return { crewCap, cannonCap, cargoCap, combatPower, mannedCannons };
   }, [sloopToSend, schoonerToSend, frigateToSend, galleonToSend, troopsToSend, cannonsToSend]);
 
   // Handle setting all available resources to send
@@ -335,6 +353,18 @@ export const Military: React.FC<MilitaryProps> = ({
                         );
                       })}
                     </select>
+
+                    {hasActiveTradePact && (
+                      <div className="mt-3 p-3 bg-amber-950/40 border border-amber-500/40 rounded-xl text-amber-300 text-xs font-mono flex items-center gap-2">
+                        <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0" />
+                        <div>
+                          <span className="font-bold text-amber-400 block">🤝 ALLIANCE NON-AGGRESSION PACT IN EFFECT</span>
+                          <span>
+                            You have an active trade agreement with Captain {players[targetPort?.ownerId || '']?.username || targetPort?.ownerName || 'your partner'}. You cannot launch military attacks against trade partners. Go to the <strong>Commerce Tab</strong> to enact a <strong>Trade Embargo</strong> first if you wish to break the pact.
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div>
@@ -535,7 +565,10 @@ export const Military: React.FC<MilitaryProps> = ({
                   <div className="text-[10px] text-neutral-500 pl-2 space-y-0.5 border-l border-rose-500/30 font-mono">
                     <div>• Ships: {((Math.floor(sloopToSend) || 0) * SHIP_CONFIGS.sloop.combatPower) + ((Math.floor(schoonerToSend) || 0) * SHIP_CONFIGS.schooner.combatPower) + ((Math.floor(frigateToSend) || 0) * SHIP_CONFIGS.frigate.combatPower) + ((Math.floor(galleonToSend) || 0) * SHIP_CONFIGS.galleon.combatPower)} Power</div>
                     <div>• Crew: {troopsToSend * 3} Power (⚔️3 each)</div>
-                    <div>• Cannons: {cannonsToSend * 8} Power (⚔️8 each)</div>
+                    <div>• Cannons: {capacities.mannedCannons * 8} Power (⚔️8 each, {capacities.mannedCannons}/{cannonsToSend} manned)</div>
+                    {cannonsToSend > capacities.mannedCannons && (
+                      <div className="text-amber-400 text-[9.5px]">⚠️ {cannonsToSend - capacities.mannedCannons} unmanned cannon(s) (requires 2 crew per cannon)</div>
+                    )}
                   </div>
                   <div className="flex justify-between border-t border-neutral-900 pt-1.5 mt-1.5">
                     <span className="text-neutral-400">Crew Carriage Capacity:</span>
@@ -563,7 +596,8 @@ export const Military: React.FC<MilitaryProps> = ({
                                            (targetPort.schooner * 30) +
                                            (targetPort.frigate * 80) +
                                            (targetPort.galleon * 200);
-                  const garrisonPower = (targetPort.troops * 3) + (targetPort.cannons * 8);
+                  const mannedTargetCannons = Math.min(targetPort.cannons, Math.floor(targetPort.troops / 2));
+                  const garrisonPower = (targetPort.troops * 3) + (mannedTargetCannons * 8);
                   const fortPower = targetPort.fortificationLevel * 40;
                   const liveDefensePower = defenseShipPower + garrisonPower + fortPower;
 
@@ -623,7 +657,7 @@ export const Military: React.FC<MilitaryProps> = ({
 
                         {latestReportForTarget && latestReportForTarget.gold !== undefined && (
                           <>
-                            <div className="text-yellow-400">������ Scouted Gold:</div>
+                            <div className="text-yellow-400">💰 Scouted Gold:</div>
                             <div className="text-right text-yellow-400 font-bold">{latestReportForTarget.gold.toLocaleString()} G</div>
                           </>
                         )}
@@ -729,7 +763,12 @@ export const Military: React.FC<MilitaryProps> = ({
               {activeMode === 'campaign' ? (
                 <button
                   type="button"
+                  disabled={hasActiveTradePact}
                   onClick={() => {
+                    if (hasActiveTradePact) {
+                      setErrorMsg('You cannot attack a player with whom you have an active Trade Pact! Enact a Trade Embargo first in Commerce Tab.');
+                      return;
+                    }
                     if (!targetPortId) {
                       setErrorMsg('You must select an island destination target, Captain!');
                       return;
@@ -869,6 +908,22 @@ export const Military: React.FC<MilitaryProps> = ({
                       {camp.governors > 0 && <div>Governors: <span className="text-yellow-500 font-bold">{camp.governors}</span></div>}
                     </div>
 
+                    {camp.senderId === player.id && camp.status === 'moving' && (camp.type === 'transfer' || camp.type === 'scout' || (camp.type.startsWith('attack_') && camp.ticksRemaining > 7)) && onCancelCampaign && (
+                      <div className="pt-2 border-t border-neutral-900 flex justify-end">
+                        <button
+                          onClick={() => {
+                            if (confirm(`Are you sure you want to recall the fleet targeting ${camp.targetPortName}? The armada will immediately turn around and sail back to port.`)) {
+                              handleAction(() => onCancelCampaign(camp.id));
+                            }
+                          }}
+                          className="text-[10px] font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors shadow-sm cursor-pointer"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
+                          CANCEL / RECALL FLEET HOME
+                        </button>
+                      </div>
+                    )}
+
                     {camp.outcome && (
                       <div className="mt-2 p-2 bg-slate-900 rounded border border-neutral-800 text-[10.5px] text-amber-300">
                         {camp.outcome}
@@ -911,7 +966,8 @@ export const Military: React.FC<MilitaryProps> = ({
                                          (rep.schooner * 30) +
                                          (rep.frigate * 80) +
                                          (rep.galleon * 200);
-                const garrisonPower = (rep.troops * 3) + (rep.cannons * 8);
+                const mannedRepCannons = Math.min(rep.cannons, Math.floor(rep.troops / 2));
+                const garrisonPower = (rep.troops * 3) + (mannedRepCannons * 8);
                 const fortPower = rep.fortificationLevel * 40;
                 const totalDefensePower = defenseShipPower + garrisonPower + fortPower;
 

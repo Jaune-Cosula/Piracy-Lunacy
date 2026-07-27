@@ -44,11 +44,22 @@ export interface GamePort {
 
 export interface TradeRoute {
   id: string;
-  ownerId: string;
-  portAId: string;
-  portBId: string;
+  proposerPlayerId: string;
+  proposerPlayerName: string;
+  recipientPlayerId: string;
+  recipientPlayerName: string;
+  proposerPortId: string;
+  proposerPortName: string;
+  recipientPortId: string;
+  recipientPortName: string;
   shipType: 'sloop' | 'schooner';
-  active: boolean;
+  status: 'pending' | 'active';
+  createdAt?: string;
+  // Backward compatibility fields
+  ownerId?: string;
+  portAId?: string;
+  portBId?: string;
+  active?: boolean;
 }
 
 export interface FleetCampaign {
@@ -153,6 +164,7 @@ export interface GameState {
   lastTickTime: string;
   gameStartTime?: string;
   roundLimitTicks?: number;
+  roundName?: string;
   tickSpeedMode: 'normal' | 'fast' | 'debug'; // normal = 15m, fast = 30s, debug = 5m
   forum?: ForumPost[];
   directMessages?: DirectMessage[];
@@ -221,10 +233,19 @@ export const SHIP_CONFIGS: Record<'sloop' | 'schooner' | 'frigate' | 'galleon', 
 };
 
 export const COST_GOVERNOR = 3000;
+export function getGovernorCost(ownedPortsCount: number): number {
+  return 2000 + 1000 * Math.max(1, ownedPortsCount);
+}
 export const COST_TROOP = 30; // Gold
 export const COST_CANNON = 80; // Gold
 export const COST_SCOUT = 150; // Gold
-export const COST_FORTIFICATION = 400; // Gold + 100 Goods
+export function getFortificationCost(currentLevel: number): { goldCost: number; goodsCost: number } {
+  const level = Math.max(1, currentLevel);
+  const goldCost = 50 + level * 50; // Lvl 1->2: 100G, Lvl 2->3: 150G, Lvl 3->4: 200G, Lvl 4->5: 250G
+  const goodsCost = level * 400;    // Lvl 1->2: 400W, Lvl 2->3: 800W, Lvl 3->4: 1200W, Lvl 4->5: 1600W
+  return { goldCost, goodsCost };
+}
+export const COST_FORTIFICATION = 100; // Base gold cost for level 1 fort upgrade
 
 export const UPKEEP_TROOP = 1; // Gold per tick
 export const UPKEEP_SCOUT = 2; // Gold per tick

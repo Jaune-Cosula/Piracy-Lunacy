@@ -15,10 +15,12 @@ import {
   ScoutReport, 
   SHIP_CONFIGS, 
   COST_GOVERNOR, 
+  getGovernorCost,
   COST_TROOP, 
   COST_CANNON, 
   COST_SCOUT, 
   COST_FORTIFICATION,
+  getFortificationCost,
   UPKEEP_TROOP,
   UPKEEP_SCOUT
 } from './src/types.js';
@@ -274,6 +276,7 @@ function createInitialState(): GameState {
     lastTickTime: new Date().toISOString(),
     gameStartTime: new Date().toISOString(),
     roundLimitTicks: 2000,
+    roundName: 'Seven Seas',
     tickSpeedMode: 'normal',
     forum: [],
     directMessages: [],
@@ -317,10 +320,21 @@ function loadLocalDatabaseFile(): boolean {
       if (!state.scoutReports) state.scoutReports = [];
       if (!state.campaigns) state.campaigns = [];
       if (!state.tradeRoutes) state.tradeRoutes = [];
+      state.tradeRoutes.forEach((route: any) => {
+        if (!route.proposerPlayerId) route.proposerPlayerId = route.ownerId || '';
+        if (!route.proposerPortId) route.proposerPortId = route.portAId || '';
+        if (!route.recipientPortId) route.recipientPortId = route.portBId || '';
+        if (!route.recipientPlayerId && route.recipientPortId && state.ports[route.recipientPortId]) {
+          route.recipientPlayerId = state.ports[route.recipientPortId].ownerId;
+        }
+        if (!route.status) route.status = route.active ? 'active' : 'pending';
+        if (route.status === 'active') route.active = true;
+      });
       if (!state.news) state.news = [];
       if (!state.authStore) state.authStore = {};
       if (!state.gameStartTime) state.gameStartTime = new Date().toISOString();
       if (!state.roundLimitTicks) state.roundLimitTicks = 2000;
+      if (!state.roundName) state.roundName = 'Seven Seas';
       Object.values(state.ports).forEach(p => {
         if (!p.buildQueue) p.buildQueue = [];
       });
@@ -376,6 +390,7 @@ async function loadStateFromFirestore(forceCheck = false) {
       if (!state.authStore) state.authStore = {};
       if (!state.gameStartTime) state.gameStartTime = new Date().toISOString();
       if (!state.roundLimitTicks) state.roundLimitTicks = 2000;
+      if (!state.roundName) state.roundName = 'Seven Seas';
       Object.values(state.ports).forEach(p => {
         if (!p.buildQueue) p.buildQueue = [];
       });
@@ -445,7 +460,8 @@ export function calculateScores() {
                                               (port.galleon * SHIP_CONFIGS.galleon.combatPower);
                                               
       // Port army value
-      playerStats[port.ownerId].armyValue += (port.troops * 1) + (port.cannons * 2);
+      const mannedPortCannons = Math.min(port.cannons, Math.floor(port.troops / 2));
+      playerStats[port.ownerId].armyValue += (port.troops * 1) + (mannedPortCannons * 2);
     }
   });
 
@@ -457,7 +473,8 @@ export function calculateScores() {
                                             (c.frigate * SHIP_CONFIGS.frigate.combatPower) +
                                             (c.galleon * SHIP_CONFIGS.galleon.combatPower);
                                             
-      playerStats[c.senderId].armyValue += (c.troops * 1) + (c.cannons * 2);
+      const mannedCampCannons = Math.min(c.cannons, Math.floor(c.troops / 2));
+      playerStats[c.senderId].armyValue += (c.troops * 1) + (mannedCampCannons * 2);
     }
   });
 
@@ -619,21 +636,43 @@ export function processGameTick() {
     }
   });
 
-  // Calculate Trade Route Gold Production
-  // Trade routes require a Sloop or Schooner to be assigned, producing gold per route
-  // Clean up any trade routes where the owner no longer owns both ports (e.g. port captured)
+  // Calculate Alliance Trade Route Gold Production
+  // Trade routes are non-aggression commercial pacts between different players.
+  // Both captains receive gold bonus each tick!
   state.tradeRoutes = state.tradeRoutes.filter(route => {
-    const portA = state.ports[route.portAId];
-    const portB = state.ports[route.portBId];
-    return route.active && portA && portB && portA.ownerId === route.ownerId && portB.ownerId === route.ownerId && state.players[route.ownerId];
+    const proposerPortId = route.proposerPortId || route.portAId;
+    const recipientPortId = route.recipientPortId || route.portBId;
+    const proposerPort = state.ports[proposerPortId];
+    const recipientPort = state.ports[recipientPortId];
+    
+    const proposerPlayerId = route.proposerPlayerId || route.ownerId;
+    const recipientPlayerId = route.recipientPlayerId;
+
+    // Both ports must exist, and must be owned by the respective proposer and recipient players (who are different players)
+    const validProposer = proposerPort && proposerPort.ownerId === proposerPlayerId && state.players[proposerPlayerId];
+    const validRecipient = recipientPort && recipientPort.ownerId === recipientPlayerId && state.players[recipientPlayerId] && recipientPlayerId !== proposerPlayerId;
+
+    if (!validProposer || !validRecipient) {
+      // Return ship to proposer port if proposer port still exists
+      if (proposerPort) {
+        proposerPort[route.shipType] = (proposerPort[route.shipType] || 0) + 1;
+      }
+      return false; // Remove invalid route
+    }
+    return true;
   });
 
   state.tradeRoutes.forEach(route => {
-    const p = state.players[route.ownerId];
-    if (p) {
-      // Schooner routes are twice as lucrative
-      const tradeBonus = route.shipType === 'schooner' ? 150 : 60;
-      p.gold += tradeBonus;
+    const isActive = route.status === 'active' || route.active === true;
+    if (isActive) {
+      const proposerPlayerId = route.proposerPlayerId || route.ownerId;
+      const recipientPlayerId = route.recipientPlayerId;
+      const p1 = state.players[proposerPlayerId];
+      const p2 = state.players[recipientPlayerId];
+
+      const tradeBonus = route.shipType === 'schooner' ? 250 : 100;
+      if (p1) p1.gold += tradeBonus;
+      if (p2) p2.gold += tradeBonus;
     }
   });
 
@@ -881,31 +920,35 @@ function resolveBattle(c: FleetCampaign) {
   const defenderPlayer = isTargetOwnedByPlayer ? state.players[targetPort.ownerId!] : null;
   const defenderName = defenderPlayer ? defenderPlayer.username : targetPort.ownerName;
 
-  // 1. Calculate Attacking Power (with troops = 3 power, cannons = 8 power)
+  // 1. Calculate Attacking Power (with troops = 3 power, cannons = 8 power; each cannon requires 2 crew members to operate)
   const attackerShipPower = (c.sloop * SHIP_CONFIGS.sloop.combatPower) +
                             (c.schooner * SHIP_CONFIGS.schooner.combatPower) +
                             (c.frigate * SHIP_CONFIGS.frigate.combatPower) +
                             (c.galleon * SHIP_CONFIGS.galleon.combatPower);
                              
-  // Attacking forces
+  // Attacking forces - cannons require 2 crew members each
+  const mannedAttackerCannons = Math.min(c.cannons, Math.floor(c.troops / 2));
   const attTroopPower = c.troops * 3;
-  const attCannonPower = c.cannons * 8;
+  const attCannonPower = mannedAttackerCannons * 8;
   const totalOffence = attackerShipPower + attTroopPower + attCannonPower;
 
-  // 2. Calculate Defending Power
+  // 2. Calculate Defending Power - cannons require 2 crew members each
   const defenderShipPower = (targetPort.sloop * SHIP_CONFIGS.sloop.combatPower) +
                             (targetPort.schooner * SHIP_CONFIGS.schooner.combatPower) +
                             (targetPort.frigate * SHIP_CONFIGS.frigate.combatPower) +
                             (targetPort.galleon * SHIP_CONFIGS.galleon.combatPower);
                              
+  const mannedDefenderCannons = Math.min(targetPort.cannons, Math.floor(targetPort.troops / 2));
   const defTroopPower = targetPort.troops * 3;
-  const defCannonPower = targetPort.cannons * 8;
+  const defCannonPower = mannedDefenderCannons * 8;
   const fortPower = targetPort.fortificationLevel * 40; // fortification adds defensive buffer
   const totalDefence = defenderShipPower + defTroopPower + defCannonPower + fortPower;
 
   console.log(`Resolving Battle at ${targetPort.name}: Offence=${totalOffence} vs Defence=${totalDefence}`);
 
   // Base battle outcomes
+  const initialFortLevel = targetPort.fortificationLevel;
+
   if (c.type === 'attack_conquer') {
     // 1. Conquer with fleet and Governor
     // Needs 3 times port defense offence
@@ -953,6 +996,7 @@ function resolveBattle(c: FleetCampaign) {
       const survivingSchooner = c.schooner;
       const survivingFrigate = c.frigate;
       const survivingGalleon = c.galleon;
+      const survivingGovernors = c.governors;
 
       // Station remaining forces directly at the newly conquered port!
       targetPort.troops += c.troops;
@@ -961,6 +1005,7 @@ function resolveBattle(c: FleetCampaign) {
       targetPort.schooner += c.schooner;
       targetPort.frigate += c.frigate;
       targetPort.galleon += c.galleon;
+      targetPort.governors += c.governors;
       
       // Reset attacking campaign force since they stayed to garrison the port
       c.troops = 0;
@@ -969,8 +1014,9 @@ function resolveBattle(c: FleetCampaign) {
       c.schooner = 0;
       c.frigate = 0;
       c.galleon = 0;
+      c.governors = 0;
       
-      c.outcome = `CONQUEST SUCCESSFUL! You conquered ${targetPort.name} from ${oldOwnerName} with ${totalOffence} Offence Power against their ${totalDefence} Defence Power! Your surviving forces (${survivingTroops} crew, ${survivingCannons} cannons, and ships [Sloop: ${survivingSloop}, Schooner: ${survivingSchooner}, Frigate: ${survivingFrigate}, Galleon: ${survivingGalleon}]) have successfully taken garrison of the port and are stationed there.`;
+      c.outcome = `CONQUEST SUCCESSFUL! You conquered ${targetPort.name} from ${oldOwnerName} with ${totalOffence} Offence Power against their ${totalDefence} Defence Power! Your surviving forces (${survivingTroops} crew, ${survivingCannons} cannons, ${survivingGovernors} extra governors, and ships [Sloop: ${survivingSloop}, Schooner: ${survivingSchooner}, Frigate: ${survivingFrigate}, Galleon: ${survivingGalleon}]) have successfully taken garrison of the port and are stationed there.`;
       
       state.news.push({
         id: `conquest_success_${c.id}`,
@@ -1177,7 +1223,13 @@ function resolveBattle(c: FleetCampaign) {
       
       targetPort.troops -= killedTroops;
       targetPort.cannons -= killedCannons;
-      targetPort.fortificationLevel = Math.max(1, targetPort.fortificationLevel - 2);
+      
+      // Successful raze reduces fortifications to level 1, or level 0 if already level 1
+      if (targetPort.fortificationLevel > 1) {
+        targetPort.fortificationLevel = 1;
+      } else if (targetPort.fortificationLevel === 1) {
+        targetPort.fortificationLevel = 0;
+      }
       
       // Inflict raze status: 72 ticks total (48 + 24)
       targetPort.razedTicksRemaining = 72;
@@ -1236,6 +1288,17 @@ function resolveBattle(c: FleetCampaign) {
         timestamp: new Date().toISOString()
       });
     }
+  }
+
+  // General battle fortification damage rule:
+  // If attacking force has at least 50% of defending force, reduce 1 level of fortifications (unless already handled by successful raze)
+  const isSuccessfulRaze = c.type === 'attack_raze' && totalOffence > totalDefence;
+  if (!isSuccessfulRaze && totalOffence >= totalDefence * 0.5 && targetPort.fortificationLevel > 0) {
+    targetPort.fortificationLevel = Math.max(0, targetPort.fortificationLevel - 1);
+  }
+
+  if (targetPort.fortificationLevel < initialFortLevel && c.outcome) {
+    c.outcome += ` Fortification walls suffered damage (Level ${initialFortLevel} → ${targetPort.fortificationLevel}).`;
   }
 }
 
@@ -1429,11 +1492,21 @@ app.post('/api/auth/register', (req, res) => {
   const playerId = `pirate_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
   
   // Find a suitable starting port (Unowned independent port, or any NPC independent port)
-  const candidatePorts = Object.values(state.ports).filter(p => p.ownerId === 'npc_independent' || p.ownerId === null);
+  const allCandidatePorts = Object.values(state.ports).filter(p => p.ownerId === 'npc_independent' || p.ownerId === null);
   
-  if (candidatePorts.length === 0) {
+  if (allCandidatePorts.length === 0) {
     return res.status(500).json({ error: 'No islands left to colonize! Try plundering.' });
   }
+
+  // Filter out ports that are currently under attack, being invaded, or scouted (targeted by active incoming campaigns)
+  const attackedPortIds = new Set(
+    state.campaigns
+      .filter(c => c.status !== 'returning')
+      .map(c => c.targetPortId)
+  );
+
+  const safeCandidatePorts = allCandidatePorts.filter(p => !attackedPortIds.has(p.id));
+  const candidatePorts = safeCandidatePorts.length > 0 ? safeCandidatePorts : allCandidatePorts;
   
   // Pick random candidate starting port
   const startPort = candidatePorts[Math.floor(Math.random() * candidatePorts.length)];
@@ -1679,9 +1752,11 @@ app.post('/api/game/train', authenticateToken, (req, res) => {
     });
     description = `Ordered ${num} cannons at ${port.name} (will complete construction in 8 ticks)`;
   } else if (type === 'governors') {
-    totalCost = num * COST_GOVERNOR;
+    const ownedPortsCount = Object.values(state.ports).filter(p => p.ownerId === player.id).length;
+    const unitCost = getGovernorCost(ownedPortsCount);
+    totalCost = num * unitCost;
     if (player.gold < totalCost) {
-      return res.status(400).json({ error: `Insufficient Gold. Needs ${totalCost} Gold.` });
+      return res.status(400).json({ error: `Insufficient Gold. Needs ${totalCost} Gold (${unitCost} Gold per Governor for ${ownedPortsCount} ports).` });
     }
     player.gold -= totalCost;
     port.governors += num;
@@ -1708,11 +1783,16 @@ app.post('/api/game/train', authenticateToken, (req, res) => {
     const currentFort = port.fortificationLevel;
     const upgradeLevels = Math.min(num, 5 - currentFort);
     
-    const goldCost = upgradeLevels * COST_FORTIFICATION;
-    const goodsCost = upgradeLevels * 100;
+    let goldCost = 0;
+    let goodsCost = 0;
+    for (let l = 0; l < upgradeLevels; l++) {
+      const c = getFortificationCost(currentFort + l);
+      goldCost += c.goldCost;
+      goodsCost += c.goodsCost;
+    }
     
     if (player.gold < goldCost || player.goods < goodsCost) {
-      return res.status(400).json({ error: `Upgrade requires ${goldCost} Gold and ${goodsCost} Goods.` });
+      return res.status(400).json({ error: `Upgrade requires ${goldCost} Gold and ${goodsCost} Wood.` });
     }
     
     player.gold -= goldCost;
@@ -1822,6 +1902,23 @@ app.post('/api/game/attack', authenticateToken, (req, res) => {
   }
   if (originPortId === targetPortId) {
     return res.status(400).json({ error: 'You cannot launch an armada against yourself!' });
+  }
+
+  // Non-Aggression Pact check: Cannot attack players with active trade routes
+  if (targetPort.ownerId && targetPort.ownerId !== 'npc' && targetPort.ownerId !== player.id) {
+    const activePact = state.tradeRoutes.find(r => 
+      (r.status === 'active' || r.active === true) &&
+      (((r.proposerPlayerId || r.ownerId) === player.id && r.recipientPlayerId === targetPort.ownerId) ||
+       (r.recipientPlayerId === player.id && (r.proposerPlayerId || r.ownerId) === targetPort.ownerId))
+    );
+
+    if (activePact) {
+      const targetPlayer = state.players[targetPort.ownerId];
+      const targetName = targetPlayer ? targetPlayer.username : 'your trading partner';
+      return res.status(400).json({ 
+        error: `TRADE PACT RESTRICTION: You have an active alliance trade route with ${targetName}! You cannot attack them. You must break/embargo the trade agreement in the Commerce tab first.` 
+      });
+    }
   }
 
   // Validate quantities
@@ -2089,83 +2186,278 @@ app.post('/api/game/scout', authenticateToken, (req, res) => {
   res.json({ success: true, message: 'Scout sloop deployed in stealth! ETA for intel: 2 ticks (return voyage: 2 ticks).', campaign });
 });
 
-// Establish Trade Route
+// Cancel / Recall Fleet Campaign before battle begins
+app.post('/api/game/campaign/cancel', authenticateToken, (req, res) => {
+  const player = (req as any).player;
+  const { campaignId } = req.body;
+
+  if (!campaignId || typeof campaignId !== 'string') {
+    return res.status(400).json({ error: 'Campaign ID is required.' });
+  }
+
+  const campaign = state.campaigns.find(c => c.id === campaignId);
+
+  if (!campaign) {
+    return res.status(404).json({ error: 'Campaign not found or already completed.' });
+  }
+
+  if (campaign.senderId !== player.id) {
+    return res.status(403).json({ error: 'You can only cancel your own campaigns.' });
+  }
+
+  if (campaign.status === 'returning') {
+    return res.status(400).json({ error: 'This fleet is already returning home!' });
+  }
+
+  if (campaign.status === 'battling') {
+    return res.status(400).json({ error: 'The battle has already begun! The fleet cannot be recalled now!' });
+  }
+
+  const isAttack = campaign.type.startsWith('attack_');
+  if (isAttack && campaign.ticksRemaining <= 7) {
+    return res.status(400).json({ error: 'The attack is already engaged in battle! It is too late to recall the fleet.' });
+  }
+
+  // Calculate return journey duration based on distance travelled outwards
+  if (isAttack) {
+    // Attack initial totalDuration = 11. Outward phase = 4 ticks (from 11 down to 7)
+    const ticksElapsedOutward = 11 - campaign.ticksRemaining;
+    const returnTicksNeeded = Math.max(1, ticksElapsedOutward);
+    campaign.status = 'returning';
+    campaign.ticksRemaining = returnTicksNeeded;
+  } else if (campaign.type === 'transfer') {
+    const ticksElapsedOutward = 4 - campaign.ticksRemaining;
+    const returnTicksNeeded = Math.max(1, ticksElapsedOutward);
+    campaign.status = 'returning';
+    campaign.ticksRemaining = returnTicksNeeded;
+  } else if (campaign.type === 'scout') {
+    const ticksElapsedOutward = 4 - campaign.ticksRemaining;
+    const returnTicksNeeded = Math.max(1, ticksElapsedOutward);
+    campaign.status = 'returning';
+    campaign.ticksRemaining = returnTicksNeeded;
+  }
+
+  campaign.outcome = `COMMAND RECALLED: Captain ${player.username} cancelled the campaign. The armada turned back towards ${campaign.originPortName}.`;
+
+  state.news.push({
+    id: `campaign_cancel_${campaign.id}_${Date.now()}`,
+    tick: state.currentTick,
+    type: 'system',
+    message: `COMMAND RECALLED: Captain ${player.username} has recalled their fleet heading to ${campaign.targetPortName}! The armada is turning back to ${campaign.originPortName}.`,
+    timestamp: new Date().toISOString(),
+    senderPlayerId: player.id
+  });
+
+  saveDb();
+  res.json({
+    success: true,
+    message: `Fleet recalled! The ships have turned back and are sailing home to ${campaign.originPortName} (${campaign.ticksRemaining} ticks remaining).`,
+    campaign,
+    state
+  });
+});
+
+// Propose Alliance Trade Route with another player
 app.post('/api/game/trade', authenticateToken, (req, res) => {
   const player = (req as any).player;
-  const { portAId, portBId, shipType } = req.body; // shipType: 'sloop' | 'schooner'
+  const { proposerPortId, recipientPortId, portAId, portBId, shipType } = req.body; 
 
-  const portA = state.ports[portAId];
-  const portB = state.ports[portBId];
+  const pPortId = proposerPortId || portAId;
+  const rPortId = recipientPortId || portBId;
 
-  if (!portA || portA.ownerId !== player.id || !portB || portB.ownerId !== player.id) {
-    return res.status(400).json({ error: 'You must own BOTH ports to establish a trade route!' });
+  const proposerPort = state.ports[pPortId];
+  const recipientPort = state.ports[rPortId];
+
+  if (!proposerPort || proposerPort.ownerId !== player.id) {
+    return res.status(403).json({ error: 'You must own the departure port to propose a trade route!' });
   }
-  if (portAId === portBId) {
-    return res.status(400).json({ error: 'You cannot trade with yourself at the same port!' });
+  if (!recipientPort) {
+    return res.status(404).json({ error: 'Target destination port not found!' });
   }
 
-  // Check if route already exists
+  if (recipientPort.ownerId === player.id) {
+    return res.status(400).json({ error: 'Trade routes can only be established with OTHER players as an alliance trade pact!' });
+  }
+
+  const recipientPlayer = state.players[recipientPort.ownerId];
+  if (!recipientPlayer || recipientPort.ownerId === 'npc') {
+    return res.status(400).json({ error: 'Trade routes can only be established with OTHER active players (not neutral/NPC ports)!' });
+  }
+
+  if (shipType !== 'sloop' && shipType !== 'schooner') {
+    return res.status(400).json({ error: 'Trade routes require either a Sloop or a Schooner!' });
+  }
+
+  if (proposerPort[shipType] < 1) {
+    return res.status(400).json({ error: `No spare ${shipType} available at ${proposerPort.name} to dedicate to the trade line!` });
+  }
+
+  // Check if route already exists between these ports
   const exists = state.tradeRoutes.some(r => 
-    (r.portAId === portAId && r.portBId === portBId) || 
-    (r.portAId === portBId && r.portBId === portAId)
+    (r.proposerPortId === pPortId && r.recipientPortId === rPortId) || 
+    (r.proposerPortId === rPortId && r.recipientPortId === pPortId) ||
+    (r.portAId === pPortId && r.portBId === rPortId) ||
+    (r.portAId === rPortId && r.portBId === pPortId)
   );
 
   if (exists) {
-    return res.status(400).json({ error: 'A trade route is already active between these ports!' });
+    return res.status(400).json({ error: 'A trade proposal or route is already active between these two ports!' });
   }
 
-  if (portA[shipType] < 1) {
-    return res.status(400).json({ error: `No spare ${shipType} available at ${portA.name} to run the trade route!` });
-  }
-
-  // Dedicate the ship from Port A
-  portA[shipType] -= 1;
+  // Dedicate ship from proposer port
+  proposerPort[shipType] -= 1;
 
   const newRoute: TradeRoute = {
     id: `route_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-    ownerId: player.id,
-    portAId,
-    portBId,
+    proposerPlayerId: player.id,
+    proposerPlayerName: player.username,
+    recipientPlayerId: recipientPlayer.id,
+    recipientPlayerName: recipientPlayer.username,
+    proposerPortId: proposerPort.id,
+    proposerPortName: proposerPort.name,
+    recipientPortId: recipientPort.id,
+    recipientPortName: recipientPort.name,
     shipType,
-    active: true
+    status: 'pending',
+    createdAt: new Date().toISOString(),
+    ownerId: player.id,
+    portAId: proposerPort.id,
+    portBId: recipientPort.id,
+    active: false
   };
 
   state.tradeRoutes.push(newRoute);
   
   state.news.push({
-    id: `trade_route_${newRoute.id}`,
+    id: `trade_proposal_${newRoute.id}`,
     tick: state.currentTick,
     type: 'trade',
-    message: `TRADE SECURED: ${player.username} has established a secure commercial trade route between ${portA.name} and ${portB.name} running a ${shipType}!`,
-    timestamp: new Date().toISOString()
+    message: `TRADE PROPOSAL: Captain ${player.username} offered an alliance trade route between ${proposerPort.name} and ${recipientPort.name} to Captain ${recipientPlayer.username}!`,
+    timestamp: new Date().toISOString(),
+    senderPlayerId: player.id,
+    targetPlayerId: recipientPlayer.id
   });
 
   calculateScores();
   saveDb();
-  res.json({ success: true, message: `Trade route established! Yields extra gold every 15 minutes.`, route: newRoute });
+  res.json({ 
+    success: true, 
+    message: `Trade proposal dispatched to Captain ${recipientPlayer.username}! Once accepted, both captains will receive recurring gold and enter a non-aggression pact.`, 
+    route: newRoute,
+    state
+  });
 });
 
-// Cancel Trade Route (Reclaim ship)
+// Accept Trade Proposal
+app.post('/api/game/trade/accept', authenticateToken, (req, res) => {
+  const player = (req as any).player;
+  const { routeId } = req.body;
+
+  const route = state.tradeRoutes.find(r => r.id === routeId && r.recipientPlayerId === player.id && r.status === 'pending');
+  if (!route) {
+    return res.status(404).json({ error: 'Pending trade offer not found or already handled!' });
+  }
+
+  route.status = 'active';
+  route.active = true;
+
+  state.news.push({
+    id: `trade_accept_${route.id}`,
+    tick: state.currentTick,
+    type: 'trade',
+    message: `ALLIANCE SIGNED: Captain ${player.username} accepted the trade proposal from ${route.proposerPlayerName}! A non-aggression commercial trade line is now active between ${route.proposerPortName} and ${route.recipientPortName}.`,
+    timestamp: new Date().toISOString(),
+    senderPlayerId: player.id,
+    targetPlayerId: route.proposerPlayerId
+  });
+
+  calculateScores();
+  saveDb();
+  res.json({
+    success: true,
+    message: `Trade Pact Accepted! Commercial alliance is now active with ${route.proposerPlayerName}. Gold bonuses will be awarded every tick.`,
+    route,
+    state
+  });
+});
+
+// Decline Trade Proposal
+app.post('/api/game/trade/decline', authenticateToken, (req, res) => {
+  const player = (req as any).player;
+  const { routeId } = req.body;
+
+  const idx = state.tradeRoutes.findIndex(r => r.id === routeId && (r.recipientPlayerId === player.id || r.proposerPlayerId === player.id) && r.status === 'pending');
+  if (idx === -1) {
+    return res.status(404).json({ error: 'Pending trade offer not found!' });
+  }
+
+  const route = state.tradeRoutes[idx];
+  const proposerPort = state.ports[route.proposerPortId || route.portAId];
+
+  if (proposerPort) {
+    proposerPort[route.shipType] = (proposerPort[route.shipType] || 0) + 1;
+  }
+
+  state.tradeRoutes.splice(idx, 1);
+
+  state.news.push({
+    id: `trade_decline_${route.id}`,
+    tick: state.currentTick,
+    type: 'trade',
+    message: `TRADE DECLINED: The proposed trade agreement between ${route.proposerPortName} and ${route.recipientPortName} was rejected.`,
+    timestamp: new Date().toISOString()
+  });
+
+  saveDb();
+  res.json({ success: true, message: 'Trade proposal rejected and dissolved.', state });
+});
+
+// Cancel / Embargo Trade Route
 app.post('/api/game/trade/cancel', authenticateToken, (req, res) => {
   const player = (req as any).player;
   const { routeId } = req.body;
 
-  const idx = state.tradeRoutes.findIndex(r => r.id === routeId && r.ownerId === player.id);
+  const idx = state.tradeRoutes.findIndex(r => r.id === routeId && (r.proposerPlayerId === player.id || r.recipientPlayerId === player.id || r.ownerId === player.id));
   if (idx === -1) {
     return res.status(404).json({ error: 'Trade route not found!' });
   }
 
   const route = state.tradeRoutes[idx];
-  const port = state.ports[route.portAId];
+  
+  // Find a port belonging to the player who is dissolving/cancelling the route to receive the stolen vessel
+  const proposerPort = state.ports[route.proposerPortId || route.portAId];
+  const recipientPort = state.ports[route.recipientPortId || route.portBId];
 
-  // Return ship to Port A
-  if (port) {
-    port[route.shipType] += 1;
+  let targetPortForStolenShip = null;
+
+  if (proposerPort && proposerPort.ownerId === player.id) {
+    targetPortForStolenShip = proposerPort;
+  } else if (recipientPort && recipientPort.ownerId === player.id) {
+    targetPortForStolenShip = recipientPort;
+  } else {
+    // Fallback: search any port owned by player
+    targetPortForStolenShip = Object.values(state.ports).find((p: any) => p.ownerId === player.id) || null;
   }
 
+  if (targetPortForStolenShip) {
+    targetPortForStolenShip[route.shipType] = (targetPortForStolenShip[route.shipType] || 0) + 1;
+  }
+
+  const otherPlayerName = route.proposerPlayerId === player.id ? route.recipientPlayerName : route.proposerPlayerName;
+
   state.tradeRoutes.splice(idx, 1);
+
+  state.news.push({
+    id: `trade_embargo_${route.id}_${Date.now()}`,
+    tick: state.currentTick,
+    type: 'trade',
+    message: `TRADE EMBARGO & SHIP SEIZURE: Captain ${player.username} broke the trade agreement with Captain ${otherPlayerName}! The commercial alliance between ${route.proposerPortName} and ${route.recipientPortName} is dissolved, ending the non-aggression pact. Captain ${player.username} seized and stole the trading ${route.shipType.toUpperCase()} for their own fleet!`,
+    timestamp: new Date().toISOString()
+  });
+
+  calculateScores();
   saveDb();
-  res.json({ success: true, message: `Trade route dissolved and the ${route.shipType} was returned to ${port ? port.name : 'garrison'}.` });
+  res.json({ success: true, message: `Trade route dissolved! You seized and stole the trading ${route.shipType.toUpperCase()} for your fleet. Non-aggression pact lifted against Captain ${otherPlayerName}.`, state });
 });
 
 // Admin / Developer Passcode Authentication Middleware
@@ -2178,12 +2470,12 @@ function authenticateAdmin(req: express.Request, res: express.Response, next: ex
   if (providedKey && providedKey === ADMIN_SECRET) {
     return next();
   }
-  return res.status(401).json({ error: 'Luvaton pääsy! Virheellinen ylläpitäjän salasana (Admin Key).' });
+  return res.status(401).json({ error: 'Unauthorized access! Invalid admin passcode (Admin Key).' });
 }
 
 // Verify Admin Passcode Endpoint
 app.post('/api/game/admin-verify', authenticateAdmin, (req, res) => {
-  res.json({ success: true, message: 'Ylläpitäjän salasana vahvistettu oikeaksi!' });
+  res.json({ success: true, message: 'Admin passcode verified successfully!' });
 });
 
 // Dev manual ticks / speed-run triggers
@@ -2240,47 +2532,18 @@ app.get('/api/game/history', (req, res) => {
   }
 });
 
-// Reset Round API (Wipes the map and restarts the round, but preserves player login/registrations)
+// Reset Round API (Completely resets game, wipes all player accounts/registrations, and sets new round name)
 app.post('/api/game/dev-reset-round', authenticateAdmin, (req, res) => {
+  const { roundName } = req.body;
+  const newRoundName = (typeof roundName === 'string' && roundName.trim()) ? roundName.trim() : 'Seven Seas';
+
   const freshState = createInitialState();
-  const playersToKeep = { ...state.players };
-  
-  // Reset players statistics
-  Object.keys(playersToKeep).forEach(pId => {
-    const p = playersToKeep[pId];
-    p.gold = 1500;
-    p.goods = 600;
-    p.score = 1100;
-    p.lastActiveTime = new Date().toISOString();
-  });
-
-  // Re-assign starter ports to each active player
-  const portsArray = Object.values(freshState.ports);
-  const playerIds = Object.keys(playersToKeep);
-
-  playerIds.forEach(pId => {
-    const pName = playersToKeep[pId].username;
-    
-    // Find unowned or independent ports in freshState
-    const candidatePorts = portsArray.filter(p => p.ownerId === 'npc_independent' || p.ownerId === null);
-    if (candidatePorts.length > 0) {
-      const startPort = candidatePorts[Math.floor(Math.random() * candidatePorts.length)];
-      startPort.ownerId = pId;
-      startPort.ownerName = pName;
-      startPort.type = 'port';
-      startPort.troops = 15;
-      startPort.cannons = 4;
-      startPort.sloop = 1;
-      startPort.schooner = 0;
-      startPort.frigate = 0;
-      startPort.galleon = 0;
-      startPort.fortificationLevel = 1;
-    }
-  });
 
   state = {
     ...freshState,
-    players: playersToKeep,
+    players: {},
+    authStore: {},
+    roundName: newRoundName,
     currentTick: 1,
     gameStartTime: new Date().toISOString(),
     lastTickTime: new Date().toISOString(),
@@ -2293,7 +2556,7 @@ app.post('/api/game/dev-reset-round', authenticateAdmin, (req, res) => {
       id: `round_reset_${Date.now()}`,
       tick: 1,
       type: 'system',
-      message: 'ROUND RESET! A new round has officially started! All islands have been redistributed, and starting treasures have been loaded onto your galleons.',
+      message: `ROUND RESET! Era of ${newRoundName} has officially begun! All pirate accounts have been wiped and islands have been redistributed. Register your new captain to take the seas!`,
       timestamp: new Date().toISOString()
     }
   ];
@@ -2311,7 +2574,7 @@ app.post('/api/game/dev-reset-round', authenticateAdmin, (req, res) => {
   }
 
   saveDb();
-  res.json({ success: true, message: 'Game round has been successfully reset! All islands cleared, players redistributed, and clock set to tick 1.', state });
+  res.json({ success: true, message: `Game round has been completely reset for Era of ${newRoundName}! All players removed and islands re-seeded.`, state });
 });
 
 // Download Game State Backup JSON
