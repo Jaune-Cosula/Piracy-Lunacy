@@ -7,6 +7,7 @@ export interface Player {
   gold: number;
   goods: number;
   lastActiveTime: string;
+  settleVoted?: boolean;
 }
 
 export interface BuildItem {
@@ -169,6 +170,12 @@ export interface GameState {
   forum?: ForumPost[];
   directMessages?: DirectMessage[];
   isPaused?: boolean;
+  pausedAt?: string;
+  totalPausedMs?: number;
+  gameEnded?: boolean;
+  winnerPlayerId?: string;
+  winnerPlayerName?: string;
+  gameEndedReason?: string;
   authStore?: Record<string, { passwordHash: string; salt: string; email: string }>;
 }
 

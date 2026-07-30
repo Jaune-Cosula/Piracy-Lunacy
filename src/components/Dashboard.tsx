@@ -183,9 +183,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       </div>
                     </div>
                     {isRazed ? (
-                      <span className="bg-rose-500/20 text-rose-400 text-[8px] font-mono font-bold px-1.5 py-0.5 rounded border border-rose-500/30 flex items-center gap-0.5 animate-pulse">
-                        <ShieldAlert className="w-2.5 h-2.5" /> RAZED
-                      </span>
+                      <div className="text-right flex flex-col items-end">
+                        <span className="text-[10px] font-mono text-yellow-500 font-bold">
+                          +{Math.floor(p.baseGoldProduction * (p.razedTicksRemaining > 24 ? 1 / 3 : 2 / 3))}G
+                        </span>
+                        <span className="bg-rose-500/20 text-rose-400 text-[8px] font-mono font-bold px-1 py-0.2 rounded border border-rose-500/30 flex items-center gap-0.5 animate-pulse mt-0.5">
+                          <ShieldAlert className="w-2.5 h-2.5" /> RAZED (-{p.baseGoldProduction - Math.floor(p.baseGoldProduction * (p.razedTicksRemaining > 24 ? 1 / 3 : 2 / 3))}G)
+                        </span>
+                      </div>
                     ) : (
                       <span className="text-[10px] font-mono text-yellow-500">+{p.baseGoldProduction}G</span>
                     )}
@@ -302,6 +307,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         ? Math.floor(selectedPort.baseGoldProduction * 2 / 3) 
                         : selectedPort.baseGoldProduction}G <span className="text-xs font-normal text-neutral-400">/tick</span>
                   </div>
+                  {selectedPort.razedTicksRemaining > 0 && (
+                    <div className="text-[9px] font-mono text-rose-400 font-bold mt-0.5">
+                      🔥 -{selectedPort.baseGoldProduction - Math.floor(selectedPort.baseGoldProduction * (selectedPort.razedTicksRemaining > 24 ? 1 / 3 : 2 / 3))}G razed loss
+                    </div>
+                  )}
                 </div>
                 <div className="bg-neutral-950/40 border border-neutral-800 rounded p-2.5 text-center">
                   <div className="text-[10px] font-mono text-neutral-400">GOODS / WOOD YIELD</div>
@@ -312,6 +322,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         ? Math.floor(selectedPort.baseGoodsProduction * 2 / 3) 
                         : selectedPort.baseGoodsProduction}W <span className="text-xs font-normal text-neutral-400">/tick</span>
                   </div>
+                  {selectedPort.razedTicksRemaining > 0 && (
+                    <div className="text-[9px] font-mono text-rose-400 font-bold mt-0.5">
+                      🔥 -{selectedPort.baseGoodsProduction - Math.floor(selectedPort.baseGoodsProduction * (selectedPort.razedTicksRemaining > 24 ? 1 / 3 : 2 / 3))}W razed loss
+                    </div>
+                  )}
                 </div>
                 <div className="bg-neutral-950/40 border border-neutral-800 rounded p-2.5 text-center">
                   <div className="text-[10px] font-mono text-neutral-400">FORTIFICATIONS</div>
@@ -578,7 +593,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   You can establish trade routes <strong>only with other captains</strong>. Propose a route from one of your ports to another captain's port. Once accepted, <strong>both captains receive recurring gold</strong> (+100G/t for Sloop, +250G/t for Schooner) and an <strong>automatic Non-Aggression Pact</strong> is sealed.
                 </p>
                 <p className="text-neutral-400 text-[10px]">
-                  💡 <em>Strategy Tip:</em> Neither captain can launch attacks against each other while the trade pact is active. Placing a route under <strong>Trade Embargo</strong> (dissolving the trade route) seizes and <strong>steals the trading vessel for your own fleet</strong>, depriving your former ally of their ship and lifting the non-aggression pact!
+                  💡 <em>Strategy Tip:</em> Each port can send only <strong>1 outgoing trade fleet</strong> (though a port can receive multiple incoming trade routes from other Captains). Neither captain can launch attacks against each other while the trade pact is active. Placing a route under <strong>Trade Embargo</strong> (dissolving the trade route) seizes and <strong>steals the trading vessel for your own fleet</strong>!
                 </p>
               </div>
 
@@ -595,6 +610,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   );
                 }
 
+                const selectedPortSendingFleet = selectedPort && tradeRoutes.some(r => (r.proposerPortId || r.portAId) === selectedPort.id);
+
                 return (
                   <div className="p-3 bg-neutral-950 rounded-xl border border-neutral-800 space-y-3 font-mono text-xs">
                     <div className="font-bold text-teal-400 text-[11px] flex items-center gap-1.5">
@@ -609,9 +626,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           onChange={(e) => onSelectPort(e.target.value)}
                           className="bg-slate-900 border border-neutral-700 rounded px-2 py-1 text-white text-xs"
                         >
-                          {playerPorts.map(p => (
-                            <option key={p.id} value={p.id}>{p.name} (Sloop: {p.sloop}, Schooner: {p.schooner})</option>
-                          ))}
+                          {playerPorts.map(p => {
+                            const isSending = tradeRoutes.some(r => (r.proposerPortId || r.portAId) === p.id);
+                            return (
+                              <option key={p.id} value={p.id}>
+                                {p.name} {isSending ? '(1/1 Outgoing Fleet Active)' : `(Sloop: ${p.sloop}, Schooner: ${p.schooner})`}
+                              </option>
+                            );
+                          })}
                         </select>
                       </div>
 
@@ -648,15 +670,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
                       <button
                         onClick={() => {
-                          if (!selectedPort || !tradeTargetPortId) return;
+                          if (!selectedPort || !tradeTargetPortId || selectedPortSendingFleet) return;
                           handleAction(() => onEstablishTrade(selectedPort.id, tradeTargetPortId, tradeShipType));
                         }}
-                        disabled={!selectedPort || !tradeTargetPortId}
+                        disabled={!selectedPort || !tradeTargetPortId || Boolean(selectedPortSendingFleet)}
                         className="bg-amber-600 hover:bg-amber-500 disabled:bg-neutral-800 disabled:text-neutral-500 font-bold px-3 py-1 rounded text-xs text-white transition flex items-center gap-1"
                       >
                         Send Proposal
                       </button>
                     </div>
+
+                    {selectedPortSendingFleet && (
+                      <p className="text-[11px] text-amber-400 font-mono flex items-center gap-1 bg-amber-950/40 p-2 rounded border border-amber-800/60">
+                        <span>⚠️ {selectedPort.name} is already sending an outgoing trade fleet. Each port can send only 1 trade fleet (though it may receive multiple incoming trade routes).</span>
+                      </p>
+                    )}
                   </div>
                 );
               })()}

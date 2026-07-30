@@ -280,7 +280,9 @@ function createInitialState(): GameState {
     tickSpeedMode: 'normal',
     forum: [],
     directMessages: [],
-    isPaused: false
+    isPaused: false,
+    pausedAt: undefined,
+    totalPausedMs: 0
   };
 }
 
@@ -335,9 +337,23 @@ function loadLocalDatabaseFile(): boolean {
       if (!state.gameStartTime) state.gameStartTime = new Date().toISOString();
       if (!state.roundLimitTicks) state.roundLimitTicks = 2000;
       if (!state.roundName) state.roundName = 'Seven Seas';
+      
+      // Sweep any trapped gold/goods on player-owned ports into player treasuries
       Object.values(state.ports).forEach(p => {
         if (!p.buildQueue) p.buildQueue = [];
+        if (p.ownerId && state.players[p.ownerId]) {
+          const owner = state.players[p.ownerId];
+          if (p.gold && p.gold > 0) {
+            owner.gold = (owner.gold || 0) + p.gold;
+            p.gold = 0;
+          }
+          if (p.goods && p.goods > 0) {
+            owner.goods = (owner.goods || 0) + p.goods;
+            p.goods = 0;
+          }
+        }
       });
+
       isStateLoaded = true;
       console.log('Successfully loaded local state from piracy_db.json');
       return true;
@@ -391,9 +407,23 @@ async function loadStateFromFirestore(forceCheck = false) {
       if (!state.gameStartTime) state.gameStartTime = new Date().toISOString();
       if (!state.roundLimitTicks) state.roundLimitTicks = 2000;
       if (!state.roundName) state.roundName = 'Seven Seas';
+      
+      // Sweep any trapped gold/goods on player-owned ports into player treasuries
       Object.values(state.ports).forEach(p => {
         if (!p.buildQueue) p.buildQueue = [];
+        if (p.ownerId && state.players[p.ownerId]) {
+          const owner = state.players[p.ownerId];
+          if (p.gold && p.gold > 0) {
+            owner.gold = (owner.gold || 0) + p.gold;
+            p.gold = 0;
+          }
+          if (p.goods && p.goods > 0) {
+            owner.goods = (owner.goods || 0) + p.goods;
+            p.goods = 0;
+          }
+        }
       });
+
       isStateLoaded = true;
     } else {
       console.log('No game state in Firestore. Initializing...');
@@ -493,8 +523,55 @@ export function calculateScores() {
   });
 }
 
+// Helper to check if all players voted to settle or auto-checked after 24h inactivity
+export function checkAndProcessSettleVotes() {
+  if (state.gameEnded) return;
+
+  const playersList = Object.values(state.players);
+  if (playersList.length === 0) return;
+
+  const now = Date.now();
+  const INACTIVITY_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+  // Automatically mark players as checked if inactive for >= 24h
+  playersList.forEach(p => {
+    const lastActive = p.lastActiveTime ? new Date(p.lastActiveTime).getTime() : 0;
+    if (now - lastActive >= INACTIVITY_MS) {
+      p.settleVoted = true;
+    }
+  });
+
+  // Check if ALL players have voted or been autochecked
+  const allChecked = playersList.every(p => p.settleVoted === true);
+  if (allChecked && playersList.length > 0) {
+    calculateScores();
+    const ranked = [...playersList].sort((a, b) => b.score - a.score);
+    const winner = ranked[0];
+
+    state.gameEnded = true;
+    state.winnerPlayerId = winner.id;
+    state.winnerPlayerName = winner.username;
+    state.gameEndedReason = 'Unanimously Settled by Captains (or 24h Inactivity)';
+    state.isPaused = true;
+
+    if (!state.news) state.news = [];
+    state.news.unshift({
+      id: 'news-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+      tick: state.currentTick,
+      type: 'system',
+      message: `🏆 WAR ENDED BY UNANIMOUS SETTLEMENT! All Captains have agreed to settle or remained inactive for 24+ hours. Captain ${winner.username} has been crowned the supreme victor of the Seven Seas with ${winner.score.toLocaleString()} points!`,
+      timestamp: new Date().toISOString()
+    });
+    if (state.news.length > 200) state.news = state.news.slice(0, 200);
+  }
+}
+
 // Tick processing logic
 export function processGameTick() {
+  if (state.gameEnded) return;
+  checkAndProcessSettleVotes();
+  if (state.gameEnded) return;
+
   state.currentTick++;
   state.lastTickTime = new Date().toISOString();
   
@@ -590,53 +667,7 @@ export function processGameTick() {
     }
   });
 
-  // Apply production and upkeeps
-  Object.keys(state.players).forEach(pId => {
-    const p = state.players[pId];
-    const prod = playerProd[pId];
-    const upkeep = playerUpkeep[pId];
-    
-    // Add production
-    p.gold += prod.gold;
-    p.goods += prod.goods;
-    
-    // Deduct upkeep
-    p.gold -= upkeep.gold;
-    
-    // Handle bankruptcy
-    if (p.gold < 0) {
-      // Player is in debt!
-      const debt = Math.abs(p.gold);
-      p.gold = 0;
-      
-      // Desertion & fleet damage!
-      let desertionCount = 0;
-      Object.values(state.ports).forEach(port => {
-        if (port.ownerId === pId) {
-          // 20% of troops desert due to lack of pay
-          const troopLoss = Math.floor(port.troops * 0.2);
-          port.troops -= troopLoss;
-          desertionCount += troopLoss;
-          
-          // 20% of scouts leave
-          const scoutLoss = Math.floor(port.scoutCount * 0.2);
-          port.scoutCount -= scoutLoss;
-        }
-      });
-      
-      if (desertionCount > 0) {
-        state.news.push({
-          id: `desertion_${state.currentTick}_${pId}`,
-          tick: state.currentTick,
-          type: 'system',
-          message: `FINANCIAL CRISIS: ${p.username}'s treasury is empty! ${desertionCount} pirates have deserted due to lack of pay.`,
-          timestamp: new Date().toISOString()
-        });
-      }
-    }
-  });
-
-  // Calculate Alliance Trade Route Gold Production
+  // Calculate Alliance Trade Route Gold Production BEFORE upkeep & bankruptcy
   // Trade routes are non-aggression commercial pacts between different players.
   // Both captains receive gold bonus each tick!
   state.tradeRoutes = state.tradeRoutes.filter(route => {
@@ -667,12 +698,70 @@ export function processGameTick() {
     if (isActive) {
       const proposerPlayerId = route.proposerPlayerId || route.ownerId;
       const recipientPlayerId = route.recipientPlayerId;
-      const p1 = state.players[proposerPlayerId];
-      const p2 = state.players[recipientPlayerId];
 
       const tradeBonus = route.shipType === 'schooner' ? 250 : 100;
-      if (p1) p1.gold += tradeBonus;
-      if (p2) p2.gold += tradeBonus;
+      if (playerProd[proposerPlayerId]) playerProd[proposerPlayerId].gold += tradeBonus;
+      if (playerProd[recipientPlayerId]) playerProd[recipientPlayerId].gold += tradeBonus;
+    }
+  });
+
+  // Apply production, trade bonuses, port treasury sweeps, and upkeeps
+  Object.keys(state.players).forEach(pId => {
+    const p = state.players[pId];
+    const prod = playerProd[pId];
+    const upkeep = playerUpkeep[pId];
+    
+    // Sweep any gold or goods sitting on ports owned by this player
+    Object.values(state.ports).forEach(port => {
+      if (port.ownerId === pId) {
+        if (port.gold && port.gold > 0) {
+          p.gold += port.gold;
+          port.gold = 0;
+        }
+        if (port.goods && port.goods > 0) {
+          p.goods += port.goods;
+          port.goods = 0;
+        }
+      }
+    });
+
+    // Add production & trade route income
+    p.gold += prod.gold;
+    p.goods += prod.goods;
+    
+    // Deduct upkeep
+    p.gold -= upkeep.gold;
+    
+    // Handle bankruptcy ONLY if total treasury is negative after all income
+    if (p.gold < 0) {
+      // Player is in debt!
+      const debt = Math.abs(p.gold);
+      p.gold = 0;
+      
+      // Desertion & fleet damage!
+      let desertionCount = 0;
+      Object.values(state.ports).forEach(port => {
+        if (port.ownerId === pId) {
+          // 20% of troops desert due to lack of pay
+          const troopLoss = Math.floor(port.troops * 0.2);
+          port.troops -= troopLoss;
+          desertionCount += troopLoss;
+          
+          // 20% of scouts leave
+          const scoutLoss = Math.floor((port.scoutCount || 0) * 0.2);
+          port.scoutCount = Math.max(0, (port.scoutCount || 0) - scoutLoss);
+        }
+      });
+      
+      if (desertionCount > 0) {
+        state.news.push({
+          id: `desertion_${state.currentTick}_${pId}`,
+          tick: state.currentTick,
+          type: 'system',
+          message: `FINANCIAL CRISIS: ${p.username}'s treasury is empty! ${desertionCount} pirates have deserted due to lack of pay.`,
+          timestamp: new Date().toISOString()
+        });
+      }
     }
   });
 
@@ -763,6 +852,16 @@ export function processGameTick() {
           }
           homePort.cannons += c.cannons;
           homePort.governors += c.governors;
+
+          state.news.push({
+            id: `fleet_return_${c.id}_${Date.now()}`,
+            tick: state.currentTick,
+            type: 'battle',
+            message: `FLEET RETURNED: Your armada from expedition at ${c.targetPortName} has returned home to ${homePort.name}. Remaining forces restocked into garrison.`,
+            timestamp: new Date().toISOString(),
+            senderPlayerId: c.senderId,
+            targetPlayerId: c.senderId
+          });
         }
       }
       
@@ -895,6 +994,7 @@ export function processGameTick() {
 
   // Calculate new leader scores
   calculateScores();
+  checkAndProcessSettleVotes();
   
   // Append new news items to persistent round history log on disk
   if (state.news && state.news.length > 0) {
@@ -910,6 +1010,19 @@ export function processGameTick() {
   saveDb();
 }
 
+function formatLossUnits(units: { crew?: number; cannons?: number; sloop?: number; schooner?: number; frigate?: number; galleon?: number; governors?: number }) {
+  const parts: string[] = [];
+  if (units.crew && units.crew > 0) parts.push(`${units.crew} Crew`);
+  if (units.cannons && units.cannons > 0) parts.push(`${units.cannons} Cannon${units.cannons > 1 ? 's' : ''}`);
+  if (units.sloop && units.sloop > 0) parts.push(`${units.sloop} Sloop${units.sloop > 1 ? 's' : ''}`);
+  if (units.schooner && units.schooner > 0) parts.push(`${units.schooner} Schooner${units.schooner > 1 ? 's' : ''}`);
+  if (units.frigate && units.frigate > 0) parts.push(`${units.frigate} Frigate${units.frigate > 1 ? 's' : ''}`);
+  if (units.galleon && units.galleon > 0) parts.push(`${units.galleon} Galleon${units.galleon > 1 ? 's' : ''}`);
+  if (units.governors && units.governors > 0) parts.push(`${units.governors} Governor${units.governors > 1 ? 's' : ''}`);
+  if (parts.length === 0) return 'None';
+  return parts.join(', ');
+}
+
 // Battle Resolution Engine
 function resolveBattle(c: FleetCampaign) {
   const targetPort = state.ports[c.targetPortId];
@@ -919,20 +1032,42 @@ function resolveBattle(c: FleetCampaign) {
   const isTargetOwnedByPlayer = targetPort.ownerId !== null && state.players[targetPort.ownerId] !== undefined;
   const defenderPlayer = isTargetOwnedByPlayer ? state.players[targetPort.ownerId!] : null;
   const defenderName = defenderPlayer ? defenderPlayer.username : targetPort.ownerName;
+  const oldOwnerId = targetPort.ownerId;
+  const oldOwnerName = targetPort.ownerName;
 
-  // 1. Calculate Attacking Power (with troops = 3 power, cannons = 8 power; each cannon requires 2 crew members to operate)
+  // Snapshot initial forces before combat
+  const attInitial = {
+    troops: c.troops,
+    cannons: c.cannons,
+    sloop: c.sloop,
+    schooner: c.schooner,
+    frigate: c.frigate,
+    galleon: c.galleon,
+    governors: c.governors
+  };
+
+  const defInitial = {
+    troops: targetPort.troops,
+    cannons: targetPort.cannons,
+    sloop: targetPort.sloop,
+    schooner: targetPort.schooner,
+    frigate: targetPort.frigate,
+    galleon: targetPort.galleon,
+    fortificationLevel: targetPort.fortificationLevel
+  };
+
+  // 1. Calculate Attacking Power
   const attackerShipPower = (c.sloop * SHIP_CONFIGS.sloop.combatPower) +
                             (c.schooner * SHIP_CONFIGS.schooner.combatPower) +
                             (c.frigate * SHIP_CONFIGS.frigate.combatPower) +
                             (c.galleon * SHIP_CONFIGS.galleon.combatPower);
                              
-  // Attacking forces - cannons require 2 crew members each
   const mannedAttackerCannons = Math.min(c.cannons, Math.floor(c.troops / 2));
   const attTroopPower = c.troops * 3;
   const attCannonPower = mannedAttackerCannons * 8;
   const totalOffence = attackerShipPower + attTroopPower + attCannonPower;
 
-  // 2. Calculate Defending Power - cannons require 2 crew members each
+  // 2. Calculate Defending Power
   const defenderShipPower = (targetPort.sloop * SHIP_CONFIGS.sloop.combatPower) +
                             (targetPort.schooner * SHIP_CONFIGS.schooner.combatPower) +
                             (targetPort.frigate * SHIP_CONFIGS.frigate.combatPower) +
@@ -941,30 +1076,25 @@ function resolveBattle(c: FleetCampaign) {
   const mannedDefenderCannons = Math.min(targetPort.cannons, Math.floor(targetPort.troops / 2));
   const defTroopPower = targetPort.troops * 3;
   const defCannonPower = mannedDefenderCannons * 8;
-  const fortPower = targetPort.fortificationLevel * 40; // fortification adds defensive buffer
+  const fortPower = targetPort.fortificationLevel * 40;
   const totalDefence = defenderShipPower + defTroopPower + defCannonPower + fortPower;
 
   console.log(`Resolving Battle at ${targetPort.name}: Offence=${totalOffence} vs Defence=${totalDefence}`);
 
-  // Base battle outcomes
-  const initialFortLevel = targetPort.fortificationLevel;
-
   if (c.type === 'attack_conquer') {
-    // 1. Conquer with fleet and Governor
-    // Needs 3 times port defense offence
     const requiredOffence = totalDefence * 3;
     const canConquer = totalOffence >= requiredOffence && c.governors >= 1;
     
     if (canConquer) {
       // Conquest SUCCESSFUL!
       const ratio = totalOffence / Math.max(1, totalDefence);
-      // Winner loss decreases, loser loss increases
-      const baseWinnerLoss = 0.12; // lower base loss (12%)
+      const baseWinnerLoss = 0.12;
       const winnerLossRatio = Math.max(0.04, baseWinnerLoss / Math.sqrt(ratio));
       
-      const defenderSurvival = 0.05; // Defender is wiped out (5% survival)
+      const defenderSurvival = 0.05; // Defender wiped out (5% survival)
       const attackerSurvival = 1 - winnerLossRatio;
       
+      // Calculate defender casualties
       targetPort.troops = Math.max(0, Math.floor(targetPort.troops * defenderSurvival));
       targetPort.cannons = Math.max(0, Math.floor(targetPort.cannons * defenderSurvival));
       targetPort.sloop = 0;
@@ -979,26 +1109,55 @@ function resolveBattle(c: FleetCampaign) {
       c.schooner = Math.max(0, Math.round(c.schooner * (1 - winnerLossRatio * 0.75)));
       c.frigate = Math.max(0, Math.round(c.frigate * (1 - winnerLossRatio * 0.5)));
       c.galleon = Math.max(0, Math.round(c.galleon * (1 - winnerLossRatio * 0.4)));
+      c.governors -= 1; // Consume 1 governor
       
-      // Consume 1 Governor
-      c.governors -= 1;
-      
-       // Transfer Port ownership
-      const oldOwnerName = targetPort.ownerName;
-      const oldOwnerId = targetPort.ownerId;
+      // Fortification damage
+      if (targetPort.fortificationLevel > 0) {
+        targetPort.fortificationLevel = Math.max(0, targetPort.fortificationLevel - 1);
+      }
+
+      const attLosses = {
+        crew: attInitial.troops - c.troops,
+        cannons: attInitial.cannons - c.cannons,
+        sloop: attInitial.sloop - c.sloop,
+        schooner: attInitial.schooner - c.schooner,
+        frigate: attInitial.frigate - c.frigate,
+        galleon: attInitial.galleon - c.galleon,
+        governors: 1
+      };
+
+      const defLosses = {
+        crew: defInitial.troops - targetPort.troops,
+        cannons: defInitial.cannons - targetPort.cannons,
+        sloop: defInitial.sloop,
+        schooner: defInitial.schooner,
+        frigate: defInitial.frigate,
+        galleon: defInitial.galleon
+      };
+
+      const fortString = defInitial.fortificationLevel > targetPort.fortificationLevel 
+        ? `Reduced (Lvl ${defInitial.fortificationLevel} → Lvl ${targetPort.fortificationLevel})` 
+        : `Intact (Lvl ${targetPort.fortificationLevel})`;
+
+      // Transfer Port ownership
       targetPort.ownerId = c.senderId;
       targetPort.ownerName = c.senderName;
-      targetPort.type = 'port'; // Now a standard player port
-      
-      const survivingTroops = c.troops;
-      const survivingCannons = c.cannons;
-      const survivingSloop = c.sloop;
-      const survivingSchooner = c.schooner;
-      const survivingFrigate = c.frigate;
-      const survivingGalleon = c.galleon;
-      const survivingGovernors = c.governors;
+      targetPort.type = 'port';
 
-      // Station remaining forces directly at the newly conquered port!
+      // Claim port treasury for the conqueror's player account
+      const conquerorPlayer = state.players[c.senderId];
+      if (conquerorPlayer) {
+        if (targetPort.gold && targetPort.gold > 0) {
+          conquerorPlayer.gold += targetPort.gold;
+          targetPort.gold = 0;
+        }
+        if (targetPort.goods && targetPort.goods > 0) {
+          conquerorPlayer.goods += targetPort.goods;
+          targetPort.goods = 0;
+        }
+      }
+      
+      // Station surviving forces directly at newly conquered port
       targetPort.troops += c.troops;
       targetPort.cannons += c.cannons;
       targetPort.sloop += c.sloop;
@@ -1007,7 +1166,7 @@ function resolveBattle(c: FleetCampaign) {
       targetPort.galleon += c.galleon;
       targetPort.governors += c.governors;
       
-      // Reset attacking campaign force since they stayed to garrison the port
+      // Reset attacking campaign force since they stayed to garrison port
       c.troops = 0;
       c.cannons = 0;
       c.sloop = 0;
@@ -1016,13 +1175,13 @@ function resolveBattle(c: FleetCampaign) {
       c.galleon = 0;
       c.governors = 0;
       
-      c.outcome = `CONQUEST SUCCESSFUL! You conquered ${targetPort.name} from ${oldOwnerName} with ${totalOffence} Offence Power against their ${totalDefence} Defence Power! Your surviving forces (${survivingTroops} crew, ${survivingCannons} cannons, ${survivingGovernors} extra governors, and ships [Sloop: ${survivingSloop}, Schooner: ${survivingSchooner}, Frigate: ${survivingFrigate}, Galleon: ${survivingGalleon}]) have successfully taken garrison of the port and are stationed there.`;
+      c.outcome = `BATTLE REPORT — CONQUEST SUCCESSFUL at ${targetPort.name}!\n⚔️ Forces: Offence ${totalOffence} vs Defence ${totalDefence}\n☠️ Attacker Losses: ${formatLossUnits(attLosses)}\n🛡️ Defender Losses: ${formatLossUnits(defLosses)}\n🏰 Fortifications: ${fortString}\n🚩 Result: ${c.senderName} captured ${targetPort.name} from ${oldOwnerName}! Surviving forces garrisoned at port.`;
       
       state.news.push({
         id: `conquest_success_${c.id}`,
         tick: state.currentTick,
         type: 'conquest',
-        message: `VICTORY! The pirate lord ${c.senderName} (Offence: ${totalOffence} Power) has captured the port of ${targetPort.name}, claiming it from ${oldOwnerName} (Defence: ${totalDefence} Power)!`,
+        message: `BATTLE RESULT — VICTORY! Captain ${c.senderName} (Offence: ${totalOffence}) conquered ${targetPort.name} from ${oldOwnerName} (Defence: ${totalDefence})!\n☠️ Attacker Losses: ${formatLossUnits(attLosses)}\n🛡️ Defender Losses: ${formatLossUnits(defLosses)}\n🏰 Fortifications: ${fortString}`,
         timestamp: new Date().toISOString(),
         senderPlayerId: c.senderId,
         targetPlayerId: oldOwnerId || undefined
@@ -1030,21 +1189,14 @@ function resolveBattle(c: FleetCampaign) {
     } else {
       // Conquest FAILED!
       const ratio = totalDefence / Math.max(1, totalOffence);
-      const baseWinnerLoss = 0.08; // Defender base loss
-      const baseLoserLoss = 0.35; // Attacker base loss (tuned down from 75% to 35%)
+      const baseWinnerLoss = 0.08;
+      const baseLoserLoss = 0.35;
       
       const winnerLossRatio = Math.max(0.02, baseWinnerLoss / Math.sqrt(ratio));
       const loserLossRatio = Math.max(baseLoserLoss, 1.0 - (1.0 - baseLoserLoss) / Math.pow(ratio, 0.6));
       
       const defenderSurvival = 1 - winnerLossRatio;
       const attackerSurvival = 1 - loserLossRatio;
-      
-      const oldAttackerTroops = c.troops;
-      const oldAttackerCannons = c.cannons;
-      const oldAttackerSloop = c.sloop;
-      const oldAttackerSchooner = c.schooner;
-      const oldAttackerFrigate = c.frigate;
-      const oldAttackerGalleon = c.galleon;
 
       c.troops = Math.max(0, Math.floor(c.troops * attackerSurvival));
       c.cannons = Math.max(0, Math.floor(c.cannons * attackerSurvival));
@@ -1052,37 +1204,52 @@ function resolveBattle(c: FleetCampaign) {
       c.schooner = Math.max(0, Math.round(c.schooner * (1 - loserLossRatio * 0.75)));
       c.frigate = Math.max(0, Math.round(c.frigate * (1 - loserLossRatio * 0.5)));
       c.galleon = Math.max(0, Math.round(c.galleon * (1 - loserLossRatio * 0.4)));
-      
-      const lostTroops = oldAttackerTroops - c.troops;
-      const lostCannons = oldAttackerCannons - c.cannons;
-      const lostSloop = oldAttackerSloop - c.sloop;
-      const lostSchooner = oldAttackerSchooner - c.schooner;
-      const lostFrigate = oldAttackerFrigate - c.frigate;
-      const lostGalleon = oldAttackerGalleon - c.galleon;
 
       targetPort.troops = Math.max(0, Math.floor(targetPort.troops * defenderSurvival));
       targetPort.cannons = Math.max(0, Math.floor(targetPort.cannons * defenderSurvival));
-      
-      c.outcome = `CONQUEST FAILED! The fortifications of ${targetPort.name} held. Combat Strength: Offence ${totalOffence} vs Defence ${totalDefence}. CASUALTIES: ${lostTroops} crew, ${lostCannons} cannons, and ships (${lostSloop} sl / ${lostSchooner} sch / ${lostFrigate} fr / ${lostGalleon} gl) were lost.`;
-      
+
+      if (totalOffence >= totalDefence * 0.5 && targetPort.fortificationLevel > 0) {
+        targetPort.fortificationLevel = Math.max(0, targetPort.fortificationLevel - 1);
+      }
+
+      const attLosses = {
+        crew: attInitial.troops - c.troops,
+        cannons: attInitial.cannons - c.cannons,
+        sloop: attInitial.sloop - c.sloop,
+        schooner: attInitial.schooner - c.schooner,
+        frigate: attInitial.frigate - c.frigate,
+        galleon: attInitial.galleon - c.galleon
+      };
+
+      const defLosses = {
+        crew: defInitial.troops - targetPort.troops,
+        cannons: defInitial.cannons - targetPort.cannons
+      };
+
+      const fortString = defInitial.fortificationLevel > targetPort.fortificationLevel 
+        ? `Reduced (Lvl ${defInitial.fortificationLevel} → Lvl ${targetPort.fortificationLevel})` 
+        : `Intact (Lvl ${targetPort.fortificationLevel})`;
+
+      c.outcome = `BATTLE REPORT — CONQUEST FAILED at ${targetPort.name}!\n⚔️ Forces: Offence ${totalOffence} vs Defence ${totalDefence}\n☠️ Attacker Losses: ${formatLossUnits(attLosses)}\n🛡️ Defender Losses: ${formatLossUnits(defLosses)}\n🏰 Fortifications: ${fortString}\n🛡️ Result: ${targetPort.name}'s defences held strong.`;
+
       state.news.push({
         id: `conquest_fail_${c.id}`,
         tick: state.currentTick,
         type: 'battle',
-        message: `DEFENCE HELD: The assault on ${targetPort.name} by ${c.senderName} (Offence: ${totalOffence} Power) was repelled by ${defenderName}'s garrison (Defence: ${totalDefence} Power). Attacker lost ${lostTroops} crew & ${lostSloop + lostSchooner + lostFrigate + lostGalleon} ships. Defenders stand strong!`,
-        timestamp: new Date().toISOString()
+        message: `BATTLE RESULT — DEFENCE HELD: The assault on ${targetPort.name} by Captain ${c.senderName} (Offence: ${totalOffence}) was repelled by ${defenderName} (Defence: ${totalDefence})!\n☠️ Attacker Losses: ${formatLossUnits(attLosses)}\n🛡️ Defender Losses: ${formatLossUnits(defLosses)}\n🏰 Fortifications: ${fortString}`,
+        timestamp: new Date().toISOString(),
+        senderPlayerId: c.senderId,
+        targetPlayerId: oldOwnerId || undefined
       });
     }
   } else if (c.type === 'attack_loot') {
-    // 2. Loot and Plunder
-    // Needs offence > defence
     const success = totalOffence > totalDefence;
     
     if (success) {
-      // Plunder successful!
+      // Plunder SUCCESSFUL!
       const ratio = totalOffence / Math.max(1, totalDefence);
-      const baseWinnerLoss = 0.06; // Attacker base loss (tuned down from 20% to 6%)
-      const baseLoserLoss = 0.20; // Defender base loss (tuned down from 40% to 20%)
+      const baseWinnerLoss = 0.06;
+      const baseLoserLoss = 0.20;
       
       const winnerLossRatio = Math.max(0.015, baseWinnerLoss / Math.sqrt(ratio));
       const loserLossRatio = Math.max(baseLoserLoss, 1.0 - (1.0 - baseLoserLoss) / Math.pow(ratio, 0.6));
@@ -1100,17 +1267,15 @@ function resolveBattle(c: FleetCampaign) {
       targetPort.troops = Math.max(0, Math.floor(targetPort.troops * defenderSurvival));
       targetPort.cannons = Math.max(0, Math.floor(targetPort.cannons * defenderSurvival));
       
-      // Calculate booty stole from defender's treasury
       let plunderedGold = 0;
       let plunderedGoods = 0;
       
       if (defenderPlayer) {
-        plunderedGold = Math.floor(defenderPlayer.gold * 0.4); // steal 40% of treasury
+        plunderedGold = Math.floor(defenderPlayer.gold * 0.4);
         plunderedGoods = Math.floor(defenderPlayer.goods * 0.4);
         defenderPlayer.gold -= plunderedGold;
         defenderPlayer.goods -= plunderedGoods;
       } else {
-        // NPC ports accumulate gold and goods; plunder loots 80% of it, with a base minimum
         plunderedGold = Math.floor((targetPort.gold || 0) * 0.8);
         plunderedGoods = Math.floor((targetPort.goods || 0) * 0.8);
         
@@ -1119,53 +1284,66 @@ function resolveBattle(c: FleetCampaign) {
         if (plunderedGold < minGold) plunderedGold = minGold;
         if (plunderedGoods < minGoods) plunderedGoods = minGoods;
         
-        // Deduct from NPC port treasury
         targetPort.gold = Math.max(0, (targetPort.gold || 0) - plunderedGold);
         targetPort.goods = Math.max(0, (targetPort.goods || 0) - plunderedGoods);
       }
       
-      // Cap plunder based on attacker's cargo space!
-      // Ships have cargo: Sloop (300), Schooner (800), Frigate (2000), Galleon (5000)
       const cargoCapacity = (c.sloop * 300) + (c.schooner * 800) + (c.frigate * 2000) + (c.galleon * 5000);
       const totalBooty = plunderedGold + plunderedGoods;
       
       if (totalBooty > cargoCapacity) {
-        const ratioCargo = cargoCapacity / totalBooty;
+        const ratioCargo = cargoCapacity / Math.max(1, totalBooty);
         plunderedGold = Math.floor(plunderedGold * ratioCargo);
         plunderedGoods = Math.floor(plunderedGoods * ratioCargo);
       }
       
-      // Deposited directly on attacker treasury upon returning
       attacker.gold += plunderedGold;
       attacker.goods += plunderedGoods;
-      
-      c.outcome = `PLUNDER SUCCESSFUL! You plundered ${targetPort.name} (Offence: ${totalOffence} vs Defence: ${totalDefence} Power) of ${plunderedGold} Gold and ${plunderedGoods} Goods, and are sailing back with the booty!`;
-      
+
+      if (totalOffence >= totalDefence * 0.5 && targetPort.fortificationLevel > 0) {
+        targetPort.fortificationLevel = Math.max(0, targetPort.fortificationLevel - 1);
+      }
+
+      const attLosses = {
+        crew: attInitial.troops - c.troops,
+        cannons: attInitial.cannons - c.cannons,
+        sloop: attInitial.sloop - c.sloop,
+        schooner: attInitial.schooner - c.schooner,
+        frigate: attInitial.frigate - c.frigate,
+        galleon: attInitial.galleon - c.galleon
+      };
+
+      const defLosses = {
+        crew: defInitial.troops - targetPort.troops,
+        cannons: defInitial.cannons - targetPort.cannons
+      };
+
+      const fortString = defInitial.fortificationLevel > targetPort.fortificationLevel 
+        ? `Reduced (Lvl ${defInitial.fortificationLevel} → Lvl ${targetPort.fortificationLevel})` 
+        : `Intact (Lvl ${targetPort.fortificationLevel})`;
+
+      c.outcome = `BATTLE REPORT — PLUNDER SUCCESSFUL at ${targetPort.name}!\n⚔️ Forces: Offence ${totalOffence} vs Defence ${totalDefence}\n💰 Loot Seized: ${plunderedGold.toLocaleString()} Gold & ${plunderedGoods.toLocaleString()} Goods\n☠️ Attacker Losses: ${formatLossUnits(attLosses)}\n🛡️ Defender Losses: ${formatLossUnits(defLosses)}\n🏰 Fortifications: ${fortString}`;
+
       state.news.push({
         id: `loot_success_${c.id}`,
         tick: state.currentTick,
         type: 'loot',
-        message: `PLUNDERED! ${c.senderName}'s fleet (Offence: ${totalOffence} Power) successfully looted the docks of ${targetPort.name} owned by ${defenderName} (Defence: ${totalDefence} Power), escaping with a massive chest of booty (${plunderedGold} Gold & ${plunderedGoods} Goods)!`,
-        timestamp: new Date().toISOString()
+        message: `BATTLE RESULT — PLUNDER SUCCESSFUL: Captain ${c.senderName}'s fleet (Offence: ${totalOffence}) looted ${targetPort.name} owned by ${defenderName} (Defence: ${totalDefence}), escaping with ${plunderedGold.toLocaleString()} Gold & ${plunderedGoods.toLocaleString()} Goods!\n☠️ Attacker Losses: ${formatLossUnits(attLosses)}\n🛡️ Defender Losses: ${formatLossUnits(defLosses)}\n🏰 Fortifications: ${fortString}`,
+        timestamp: new Date().toISOString(),
+        senderPlayerId: c.senderId,
+        targetPlayerId: oldOwnerId || undefined
       });
     } else {
       // Plunder FAILED
       const ratio = totalDefence / Math.max(1, totalOffence);
-      const baseWinnerLoss = 0.04; // Defender base loss
-      const baseLoserLoss = 0.25; // Attacker base loss (tuned down from 50% to 25%)
+      const baseWinnerLoss = 0.04;
+      const baseLoserLoss = 0.25;
       
       const winnerLossRatio = Math.max(0.01, baseWinnerLoss / Math.sqrt(ratio));
       const loserLossRatio = Math.max(baseLoserLoss, 1.0 - (1.0 - baseLoserLoss) / Math.pow(ratio, 0.6));
       
       const defenderSurvival = 1 - winnerLossRatio;
       const attackerSurvival = 1 - loserLossRatio;
-      
-      const oldAttackerTroops = c.troops;
-      const oldAttackerCannons = c.cannons;
-      const oldAttackerSloop = c.sloop;
-      const oldAttackerSchooner = c.schooner;
-      const oldAttackerFrigate = c.frigate;
-      const oldAttackerGalleon = c.galleon;
 
       c.troops = Math.max(0, Math.floor(c.troops * attackerSurvival));
       c.cannons = Math.max(0, Math.floor(c.cannons * attackerSurvival));
@@ -1173,37 +1351,52 @@ function resolveBattle(c: FleetCampaign) {
       c.schooner = Math.max(0, Math.floor(c.schooner * (1 - loserLossRatio * 0.6)));
       c.frigate = Math.max(0, Math.floor(c.frigate * (1 - loserLossRatio * 0.4)));
       c.galleon = Math.max(0, Math.floor(c.galleon * (1 - loserLossRatio * 0.3)));
-      
-      const lostTroops = oldAttackerTroops - c.troops;
-      const lostCannons = oldAttackerCannons - c.cannons;
-      const lostSloop = oldAttackerSloop - c.sloop;
-      const lostSchooner = oldAttackerSchooner - c.schooner;
-      const lostFrigate = oldAttackerFrigate - c.frigate;
-      const lostGalleon = oldAttackerGalleon - c.galleon;
 
       targetPort.troops = Math.max(0, Math.floor(targetPort.troops * defenderSurvival));
-      
-      c.outcome = `PLUNDER FAILED! Your forces were defeated trying to loot ${targetPort.name}. Combat Strength: Offence ${totalOffence} vs Defence ${totalDefence}. CASUALTIES: ${lostTroops} crew, ${lostCannons} cannons, and ships (${lostSloop} sl / ${lostSchooner} sch / ${lostFrigate} fr / ${lostGalleon} gl) were lost.`;
-      
+      targetPort.cannons = Math.max(0, Math.floor(targetPort.cannons * defenderSurvival));
+
+      if (totalOffence >= totalDefence * 0.5 && targetPort.fortificationLevel > 0) {
+        targetPort.fortificationLevel = Math.max(0, targetPort.fortificationLevel - 1);
+      }
+
+      const attLosses = {
+        crew: attInitial.troops - c.troops,
+        cannons: attInitial.cannons - c.cannons,
+        sloop: attInitial.sloop - c.sloop,
+        schooner: attInitial.schooner - c.schooner,
+        frigate: attInitial.frigate - c.frigate,
+        galleon: attInitial.galleon - c.galleon
+      };
+
+      const defLosses = {
+        crew: defInitial.troops - targetPort.troops,
+        cannons: defInitial.cannons - targetPort.cannons
+      };
+
+      const fortString = defInitial.fortificationLevel > targetPort.fortificationLevel 
+        ? `Reduced (Lvl ${defInitial.fortificationLevel} → Lvl ${targetPort.fortificationLevel})` 
+        : `Intact (Lvl ${targetPort.fortificationLevel})`;
+
+      c.outcome = `BATTLE REPORT — PLUNDER REPELLED at ${targetPort.name}!\n⚔️ Forces: Offence ${totalOffence} vs Defence ${totalDefence}\n☠️ Attacker Losses: ${formatLossUnits(attLosses)}\n🛡️ Defender Losses: ${formatLossUnits(defLosses)}\n🏰 Fortifications: ${fortString}`;
+
       state.news.push({
         id: `loot_fail_${c.id}`,
         tick: state.currentTick,
         type: 'battle',
-        message: `PLUNDER REPELLED: ${c.senderName} (Offence: ${totalOffence} Power) tried to plunder ${targetPort.name} but was beaten back by ${defenderName}'s garrison (Defence: ${totalDefence} Power). Attacker lost ${lostTroops} crew and ${lostSloop + lostSchooner + lostFrigate + lostGalleon} vessels.`,
-        timestamp: new Date().toISOString()
+        message: `BATTLE RESULT — PLUNDER REPELLED: Captain ${c.senderName} (Offence: ${totalOffence}) tried to plunder ${targetPort.name} but was beaten back by ${defenderName}'s garrison (Defence: ${totalDefence})!\n☠️ Attacker Losses: ${formatLossUnits(attLosses)}\n🛡️ Defender Losses: ${formatLossUnits(defLosses)}\n🏰 Fortifications: ${fortString}`,
+        timestamp: new Date().toISOString(),
+        senderPlayerId: c.senderId,
+        targetPlayerId: oldOwnerId || undefined
       });
     }
   } else if (c.type === 'attack_raze') {
-    // 3. Raze and Kill
-    // Pirates destroy the city, causing high casualties to defender.
-    // 1/3 production for 48 ticks, 2/3 for 24 ticks, then normal.
     const success = totalOffence > totalDefence;
     
     if (success) {
       // Raze SUCCESSFUL!
       const ratio = totalOffence / Math.max(1, totalDefence);
-      const baseWinnerLoss = 0.08; // Attacker base loss (tuned down from 25% to 8%)
-      const baseLoserLoss = 0.60; // Defender base loss (tuned down from 80% to 60%)
+      const baseWinnerLoss = 0.08;
+      const baseLoserLoss = 0.60;
       
       const winnerLossRatio = Math.max(0.02, baseWinnerLoss / Math.sqrt(ratio));
       const loserLossRatio = Math.max(baseLoserLoss, 1.0 - (1.0 - baseLoserLoss) / Math.pow(ratio, 0.5));
@@ -1224,43 +1417,54 @@ function resolveBattle(c: FleetCampaign) {
       targetPort.troops -= killedTroops;
       targetPort.cannons -= killedCannons;
       
-      // Successful raze reduces fortifications to level 1, or level 0 if already level 1
       if (targetPort.fortificationLevel > 1) {
         targetPort.fortificationLevel = 1;
       } else if (targetPort.fortificationLevel === 1) {
         targetPort.fortificationLevel = 0;
       }
       
-      // Inflict raze status: 72 ticks total (48 + 24)
       targetPort.razedTicksRemaining = 72;
-      
-      c.outcome = `RAZE SUCCESSFUL! You devastated ${targetPort.name} (Offence: ${totalOffence} vs Defence: ${totalDefence} Power), destroying their infrastructure. Their production is crippled for 72 ticks (18 hours)!`;
-      
+
+      const attLosses = {
+        crew: attInitial.troops - c.troops,
+        cannons: attInitial.cannons - c.cannons,
+        sloop: attInitial.sloop - c.sloop,
+        schooner: attInitial.schooner - c.schooner,
+        frigate: attInitial.frigate - c.frigate,
+        galleon: attInitial.galleon - c.galleon
+      };
+
+      const defLosses = {
+        crew: killedTroops,
+        cannons: killedCannons
+      };
+
+      const fortString = defInitial.fortificationLevel > targetPort.fortificationLevel 
+        ? `Reduced (Lvl ${defInitial.fortificationLevel} → Lvl ${targetPort.fortificationLevel})` 
+        : `Intact (Lvl ${targetPort.fortificationLevel})`;
+
+      c.outcome = `BATTLE REPORT — RAZE SUCCESSFUL at ${targetPort.name}!\n⚔️ Forces: Offence ${totalOffence} vs Defence ${totalDefence}\n🔥 Port Devastation: Production crippled for 72 ticks (18 hours)\n☠️ Attacker Losses: ${formatLossUnits(attLosses)}\n🛡️ Defender Losses: ${formatLossUnits(defLosses)}\n🏰 Fortifications: ${fortString}`;
+
       state.news.push({
         id: `raze_success_${c.id}`,
         tick: state.currentTick,
         type: 'raze',
-        message: `CATASTROPHE: ${c.senderName} (Offence: ${totalOffence} Power) has razed the port of ${targetPort.name} owned by ${defenderName} (Defence: ${totalDefence} Power)! Massive casualties reported, and docks are burning! Production is crippled for 72 Ticks.`,
-        timestamp: new Date().toISOString()
+        message: `BATTLE RESULT — RAZE SUCCESSFUL: Captain ${c.senderName} (Offence: ${totalOffence}) razed ${targetPort.name} owned by ${defenderName} (Defence: ${totalDefence})! Production crippled for 72 Ticks.\n☠️ Attacker Losses: ${formatLossUnits(attLosses)}\n🛡️ Defender Losses: ${formatLossUnits(defLosses)}\n🏰 Fortifications: ${fortString}`,
+        timestamp: new Date().toISOString(),
+        senderPlayerId: c.senderId,
+        targetPlayerId: oldOwnerId || undefined
       });
     } else {
       // Raze FAILED
       const ratio = totalDefence / Math.max(1, totalOffence);
-      const baseWinnerLoss = 0.06; // Defender base loss
-      const baseLoserLoss = 0.30; // Attacker base loss (tuned down from 60% to 30%)
+      const baseWinnerLoss = 0.06;
+      const baseLoserLoss = 0.30;
       
       const winnerLossRatio = Math.max(0.015, baseWinnerLoss / Math.sqrt(ratio));
       const loserLossRatio = Math.max(baseLoserLoss, 1.0 - (1.0 - baseLoserLoss) / Math.pow(ratio, 0.6));
       
       const defenderSurvival = 1 - winnerLossRatio;
       const attackerSurvival = 1 - loserLossRatio;
-      
-      const oldAttackerTroops = c.troops;
-      const oldAttackerCannons = c.cannons;
-      const oldAttackerSloop = c.sloop;
-      const oldAttackerSchooner = c.schooner;
-      const oldAttackerFrigate = c.frigate;
-      const oldAttackerGalleon = c.galleon;
 
       c.troops = Math.max(0, Math.floor(c.troops * attackerSurvival));
       c.cannons = Math.max(0, Math.floor(c.cannons * attackerSurvival));
@@ -1268,37 +1472,44 @@ function resolveBattle(c: FleetCampaign) {
       c.schooner = Math.max(0, Math.round(c.schooner * (1 - loserLossRatio * 0.65)));
       c.frigate = Math.max(0, Math.round(c.frigate * (1 - loserLossRatio * 0.45)));
       c.galleon = Math.max(0, Math.round(c.galleon * (1 - loserLossRatio * 0.35)));
-      
-      const lostTroops = oldAttackerTroops - c.troops;
-      const lostCannons = oldAttackerCannons - c.cannons;
-      const lostSloop = oldAttackerSloop - c.sloop;
-      const lostSchooner = oldAttackerSchooner - c.schooner;
-      const lostFrigate = oldAttackerFrigate - c.frigate;
-      const lostGalleon = oldAttackerGalleon - c.galleon;
 
       targetPort.troops = Math.max(0, Math.floor(targetPort.troops * defenderSurvival));
-      
-      c.outcome = `RAZE FAILED! You were unable to breach ${targetPort.name}'s gate. Combat Strength: Offence ${totalOffence} vs Defence ${totalDefence}. CASUALTIES: ${lostTroops} crew, ${lostCannons} cannons, and ships (${lostSloop} sl / ${lostSchooner} sch / ${lostFrigate} fr / ${lostGalleon} gl) were lost.`;
-      
+      targetPort.cannons = Math.max(0, Math.floor(targetPort.cannons * defenderSurvival));
+
+      if (totalOffence >= totalDefence * 0.5 && targetPort.fortificationLevel > 0) {
+        targetPort.fortificationLevel = Math.max(0, targetPort.fortificationLevel - 1);
+      }
+
+      const attLosses = {
+        crew: attInitial.troops - c.troops,
+        cannons: attInitial.cannons - c.cannons,
+        sloop: attInitial.sloop - c.sloop,
+        schooner: attInitial.schooner - c.schooner,
+        frigate: attInitial.frigate - c.frigate,
+        galleon: attInitial.galleon - c.galleon
+      };
+
+      const defLosses = {
+        crew: defInitial.troops - targetPort.troops,
+        cannons: defInitial.cannons - targetPort.cannons
+      };
+
+      const fortString = defInitial.fortificationLevel > targetPort.fortificationLevel 
+        ? `Reduced (Lvl ${defInitial.fortificationLevel} → Lvl ${targetPort.fortificationLevel})` 
+        : `Intact (Lvl ${targetPort.fortificationLevel})`;
+
+      c.outcome = `BATTLE REPORT — RAZE REPELLED at ${targetPort.name}!\n⚔️ Forces: Offence ${totalOffence} vs Defence ${totalDefence}\n☠️ Attacker Losses: ${formatLossUnits(attLosses)}\n🛡️ Defender Losses: ${formatLossUnits(defLosses)}\n🏰 Fortifications: ${fortString}`;
+
       state.news.push({
         id: `raze_fail_${c.id}`,
         tick: state.currentTick,
         type: 'battle',
-        message: `RAZE REPELLED: The brutal attempt to raze ${targetPort.name} by ${c.senderName} (Offence: ${totalOffence} Power) was stopped at the city walls by defenders (Defence: ${totalDefence} Power). Attacker lost ${lostTroops} crew & ${lostSloop + lostSchooner + lostFrigate + lostGalleon} vessels.`,
-        timestamp: new Date().toISOString()
+        message: `BATTLE RESULT — RAZE REPELLED: The brutal attempt to raze ${targetPort.name} by Captain ${c.senderName} (Offence: ${totalOffence}) was stopped by ${defenderName}'s defenders (Defence: ${totalDefence})!\n☠️ Attacker Losses: ${formatLossUnits(attLosses)}\n🛡️ Defender Losses: ${formatLossUnits(defLosses)}\n🏰 Fortifications: ${fortString}`,
+        timestamp: new Date().toISOString(),
+        senderPlayerId: c.senderId,
+        targetPlayerId: oldOwnerId || undefined
       });
     }
-  }
-
-  // General battle fortification damage rule:
-  // If attacking force has at least 50% of defending force, reduce 1 level of fortifications (unless already handled by successful raze)
-  const isSuccessfulRaze = c.type === 'attack_raze' && totalOffence > totalDefence;
-  if (!isSuccessfulRaze && totalOffence >= totalDefence * 0.5 && targetPort.fortificationLevel > 0) {
-    targetPort.fortificationLevel = Math.max(0, targetPort.fortificationLevel - 1);
-  }
-
-  if (targetPort.fortificationLevel < initialFortLevel && c.outcome) {
-    c.outcome += ` Fortification walls suffered damage (Level ${initialFortLevel} → ${targetPort.fortificationLevel}).`;
   }
 }
 
@@ -1355,6 +1566,17 @@ function resolveScout(c: FleetCampaign) {
 
   state.scoutReports.push(report);
   c.outcome = `SCOUTING COMPLETED! Your spies successfully mapped out defences at ${targetPort.name} and are returning with detailed blueprints.`;
+
+  state.news.push({
+    id: `scout_result_${c.id}_${Date.now()}`,
+    tick: state.currentTick,
+    type: 'battle',
+    message: `SCOUT RESULT — INTEL GATHERED: Your covert spies successfully mapped out defences at ${targetPort.name} (${targetPort.ownerName})! Check the Spies directory in the Military tab for detailed blueprints.`,
+    timestamp: new Date().toISOString(),
+    senderPlayerId: c.senderId,
+    targetPlayerId: targetPort.ownerId || undefined
+  });
+
   saveDb();
 }
 
@@ -1448,8 +1670,8 @@ function authenticateToken(req: express.Request, res: express.Response, next: ex
 app.post('/api/auth/register', (req, res) => {
   const { username, email, password, flagId, flagColor } = req.body;
   
-  if (!username || typeof username !== 'string' || username.trim().length < 2) {
-    return res.status(400).json({ error: 'Valid Username is required (min 2 characters)' });
+  if (!username || typeof username !== 'string' || username.trim().length < 2 || username.trim().length > 20) {
+    return res.status(400).json({ error: 'Valid Username is required (2 to 20 characters)' });
   }
   const name = username.trim();
 
@@ -1641,11 +1863,14 @@ app.get('/api/auth/me', authenticateToken, (req, res) => {
 
 // Game state retrieval
 app.get('/api/game/state', (req, res) => {
+  // Check settle votes & 24h inactivity auto-checks
+  checkAndProcessSettleVotes();
+
   // Client polls or loads full game state
   // Calculate dynamic tick progression (lazy ticks!)
   const now = new Date().getTime();
   
-  if (state.isPaused) {
+  if (state.isPaused || state.gameEnded) {
     // Keep bumping lastTickTime to current time so there's no catch-up ticks upon unpausing
     state.lastTickTime = new Date().toISOString();
   } else {
@@ -2006,7 +2231,9 @@ app.post('/api/game/attack', authenticateToken, (req, res) => {
     tick: state.currentTick,
     type: 'system',
     message: `ARMADA SPOTTED: ${player.username} has launched a massive fleet of ${totalShips} ships from ${originPort.name} heading towards ${targetPort.name}! ETA: 4 ticks.`,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    senderPlayerId: player.id,
+    targetPlayerId: targetPort.ownerId || undefined
   });
 
   saveDb();
@@ -2292,6 +2519,18 @@ app.post('/api/game/trade', authenticateToken, (req, res) => {
     return res.status(400).json({ error: `No spare ${shipType} available at ${proposerPort.name} to dedicate to the trade line!` });
   }
 
+  // One port can send only 1 tradefleet (can accept many if sent to them)
+  const isAlreadySendingFleet = state.tradeRoutes.some(r => {
+    const senderPortId = r.proposerPortId || r.portAId;
+    return senderPortId === pPortId;
+  });
+
+  if (isAlreadySendingFleet) {
+    return res.status(400).json({
+      error: `Port ${proposerPort.name} is already sending an outgoing trade fleet! Each port can send only 1 trade fleet (though it can accept multiple incoming trade lines).`
+    });
+  }
+
   // Check if route already exists between these ports
   const exists = state.tradeRoutes.some(r => 
     (r.proposerPortId === pPortId && r.recipientPortId === rPortId) || 
@@ -2478,6 +2717,28 @@ app.post('/api/game/admin-verify', authenticateAdmin, (req, res) => {
   res.json({ success: true, message: 'Admin passcode verified successfully!' });
 });
 
+// Vote to Settle Winner / Surrender endpoint
+app.post('/api/game/vote-settle', authenticateToken, (req, res) => {
+  const player = (req as any).player;
+  const { settleVoted } = req.body;
+
+  if (state.gameEnded) {
+    return res.status(400).json({ error: 'The game has already ended, Captain!' });
+  }
+
+  player.settleVoted = Boolean(settleVoted);
+  checkAndProcessSettleVotes();
+  saveDb();
+
+  res.json({
+    success: true,
+    settleVoted: player.settleVoted,
+    gameEnded: !!state.gameEnded,
+    winnerPlayerId: state.winnerPlayerId || null,
+    winnerPlayerName: state.winnerPlayerName || null
+  });
+});
+
 // Dev manual ticks / speed-run triggers
 app.post('/api/game/dev-tick', authenticateAdmin, (req, res) => {
   processGameTick();
@@ -2503,10 +2764,24 @@ app.post('/api/game/dev-speed', authenticateAdmin, (req, res) => {
 // Pause Game Loop Toggle
 app.post('/api/game/dev-pause', authenticateAdmin, (req, res) => {
   const { pause } = req.body; // boolean
-  state.isPaused = !!pause;
-  if (state.isPaused) {
-    state.lastTickTime = new Date().toISOString(); // prevent huge catchups on resume
+  const shouldPause = !!pause;
+  const now = new Date();
+
+  if (shouldPause && !state.isPaused) {
+    state.isPaused = true;
+    state.pausedAt = now.toISOString();
+    state.lastTickTime = now.toISOString();
+  } else if (!shouldPause && state.isPaused) {
+    if (state.pausedAt) {
+      const pauseDuration = now.getTime() - new Date(state.pausedAt).getTime();
+      state.totalPausedMs = (state.totalPausedMs || 0) + pauseDuration;
+      state.pausedAt = undefined;
+    }
+    state.isPaused = false;
+    state.gameEnded = false; // Allow admin to unpause & resume game
+    state.lastTickTime = now.toISOString();
   }
+
   saveDb();
   res.json({ 
     success: true, 

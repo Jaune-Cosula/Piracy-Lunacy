@@ -53,6 +53,10 @@ When you register, game makes sure you dont spawn to port which is under attack.
     Game Guide Integration: Added the Fortification Siege Damage rules under Garrison Combat Mathematics in the Captain's Manual (GameGuide.tsx).
     ---------------
     
-    
+    Manned Cannon Calculation: In all battles (attacking fleets and defending port garrisons), the number of operational cannons is capped at Math.floor(Crew / 2).
+Combat Power Impact: Unmanned cannons provide 0 Offence or Defence Power in battle resolutions, live intelligence forecasts, scout reports, and leaderboard army value calculations.
+UI & Intelligence Briefings: Updated Military.tsx and Dashboard.tsx to clearly indicate manned cannon counts (e.g. 1/2 Manned), alerting players if they have crew shortages when setting up campaigns or inspecting port garrisons.
+Manual Updated: Documented the Cannon Crew Requirement rule in the Captain's Manual (GameGuide.tsx).
+i was thinking 2 is good enough, because basicly most of the military losses are for crew, so its kind of better have some extra crew all the time, or the off/deff loss after battle can surprise
     
             

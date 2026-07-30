@@ -71,6 +71,11 @@ export const Auth: React.FC<AuthProps> = ({ onRegister, onLogin, players }) => {
       return;
     }
 
+    if (username.trim().length > 20) {
+      setErrorMsg('Dread pirate! Name must not exceed 20 characters.');
+      return;
+    }
+
     if (isForgotPassword) {
       if (!recoveryEmail || !recoveryEmail.includes('@')) {
         setErrorMsg('Please enter a valid email address.');
@@ -221,6 +226,7 @@ export const Auth: React.FC<AuthProps> = ({ onRegister, onLogin, players }) => {
             <input
               type="text"
               required
+              maxLength={20}
               placeholder="e.g. Captain Blackbeard"
               value={username}
               onChange={(e) => setUsername(e.target.value)}

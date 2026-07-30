@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { GamePort, Player, SHIP_CONFIGS, FleetCampaign, ScoutReport, TradeRoute } from '../types.ts';
+import { GamePort, Player, SHIP_CONFIGS, FleetCampaign, ScoutReport, TradeRoute, NewsItem } from '../types.ts';
 import { 
   Swords, 
   Compass, 
@@ -15,7 +15,8 @@ import {
   Coins,
   CheckCircle2,
   Lock,
-  RotateCcw
+  RotateCcw,
+  FileText
 } from 'lucide-react';
 
 interface MilitaryProps {
@@ -25,6 +26,7 @@ interface MilitaryProps {
   scoutReports: ScoutReport[];
   tradeRoutes?: TradeRoute[];
   players?: Record<string, Player>;
+  news?: NewsItem[];
   onLaunchAttack: (payload: any) => Promise<void>;
   onLaunchScout: (originPortId: string, targetPortId: string) => Promise<void>;
   onLaunchTransfer: (payload: any) => Promise<void>;
@@ -40,6 +42,7 @@ export const Military: React.FC<MilitaryProps> = ({
   scoutReports,
   tradeRoutes = [],
   players = {},
+  news = [],
   onLaunchAttack,
   onLaunchScout,
   onLaunchTransfer,
@@ -925,7 +928,7 @@ export const Military: React.FC<MilitaryProps> = ({
                     )}
 
                     {camp.outcome && (
-                      <div className="mt-2 p-2 bg-slate-900 rounded border border-neutral-800 text-[10.5px] text-amber-300">
+                      <div className="mt-2.5 p-3 bg-slate-950 rounded-xl border border-amber-500/20 text-[11px] font-mono text-amber-300 whitespace-pre-line leading-relaxed shadow-inner">
                         {camp.outcome}
                       </div>
                     )}
@@ -1074,6 +1077,45 @@ export const Military: React.FC<MilitaryProps> = ({
               })}
             </div>
           )}
+        </div>
+
+        {/* Personal Battle Log */}
+        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-2xl space-y-4">
+          <h3 className="text-xs font-black uppercase text-slate-500 tracking-widest flex items-center gap-1.5">
+            <FileText className="w-4 h-4 text-rose-400" />
+            Recent Battle Log & Outcomes
+          </h3>
+
+          {(() => {
+            const personalBattleNews = news.filter(n => 
+              (n.senderPlayerId === player.id || n.targetPlayerId === player.id) &&
+              (n.type === 'battle' || n.type === 'conquest' || n.type === 'loot' || n.type === 'raze')
+            );
+
+            if (personalBattleNews.length === 0) {
+              return (
+                <div className="p-4 bg-neutral-950/60 rounded border border-neutral-800 text-center text-xs text-neutral-500 font-mono">
+                  No battle results recorded yet, Captain. Engage enemies or check back after conflict resolves!
+                </div>
+              );
+            }
+
+            return (
+              <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
+                {personalBattleNews.slice().reverse().map(item => (
+                  <div key={item.id} className="p-3 bg-neutral-950 rounded border border-neutral-800 text-xs font-mono space-y-1.5">
+                    <div className="flex items-center justify-between text-[10px] text-neutral-400 border-b border-neutral-900 pb-1">
+                      <span className="font-bold text-rose-400 uppercase tracking-wider">{item.type}</span>
+                      <span>Tick {item.tick} • {new Date(item.timestamp).toLocaleTimeString()}</span>
+                    </div>
+                    <div className="text-neutral-200 text-[11px] whitespace-pre-line leading-relaxed">
+                      {item.message}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
         </div>
 
       </div>

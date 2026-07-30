@@ -21,7 +21,8 @@ import {
   Skull, 
   Swords, 
   Newspaper,
-  MessageSquare
+  MessageSquare,
+  Pause
 } from 'lucide-react';
 
 // Helper to format duration beautifully in Finnish or clear UI
@@ -164,10 +165,28 @@ export default function App() {
   useEffect(() => {
     if (!gameState) return;
 
+    if (gameState.isPaused) {
+      const now = gameState.pausedAt ? new Date(gameState.pausedAt).getTime() : new Date().getTime();
+      const lastTick = new Date(gameState.lastTickTime).getTime();
+      const durationMs = gameState.tickSpeedMode === 'fast' 
+        ? 30000 
+        : gameState.tickSpeedMode === 'debug'
+          ? 5 * 60 * 1000
+          : 15 * 60 * 1000;
+      const elapsed = Math.max(0, now - lastTick);
+      const remainingMs = Math.max(0, durationMs - elapsed);
+      setSecondsToNextTick(Math.ceil(remainingMs / 1000));
+      return;
+    }
+
     const calculateCountdown = () => {
       const now = new Date().getTime();
       const lastTick = new Date(gameState.lastTickTime).getTime();
-      const durationMs = gameState.tickSpeedMode === 'fast' ? 30000 : 15 * 60 * 1000;
+      const durationMs = gameState.tickSpeedMode === 'fast' 
+        ? 30000 
+        : gameState.tickSpeedMode === 'debug'
+          ? 5 * 60 * 1000
+          : 15 * 60 * 1000;
       const elapsed = now - lastTick;
       const remainingMs = Math.max(0, durationMs - elapsed);
       setSecondsToNextTick(Math.ceil(remainingMs / 1000));
@@ -463,10 +482,14 @@ export default function App() {
 
   // Calculate Net Gold and Net Goods income in real-time for UI display
   const netIncome = useMemo(() => {
-    if (!gameState || !player) return { netGold: 0, netGoods: 0, upkeepGold: 0, grossGold: 0 };
+    if (!gameState || !player) return { netGold: 0, netGoods: 0, upkeepGold: 0, grossGold: 0, razePenaltyGold: 0, razePenaltyGoods: 0, maxGoldProduction: 0, maxGoodsProduction: 0 };
 
     let grossGold = 0;
     let grossGoods = 0;
+    let maxGoldProduction = 0;
+    let maxGoodsProduction = 0;
+    let razePenaltyGold = 0;
+    let razePenaltyGoods = 0;
     let upkeepGold = 0;
 
     // Calculate production of owned ports
@@ -478,8 +501,18 @@ export default function App() {
       } else if (port.razedTicksRemaining > 0) {
         multiplier = 2 / 3;
       }
-      grossGold += Math.floor(port.baseGoldProduction * multiplier);
-      grossGoods += Math.floor(port.baseGoodsProduction * multiplier);
+      const actualGold = Math.floor(port.baseGoldProduction * multiplier);
+      const actualGoods = Math.floor(port.baseGoodsProduction * multiplier);
+
+      grossGold += actualGold;
+      grossGoods += actualGoods;
+      maxGoldProduction += port.baseGoldProduction;
+      maxGoodsProduction += port.baseGoodsProduction;
+
+      if (multiplier < 1.0) {
+        razePenaltyGold += (port.baseGoldProduction - actualGold);
+        razePenaltyGoods += (port.baseGoodsProduction - actualGoods);
+      }
 
       // Stationed upkeeps
       upkeepGold += (port.troops || 0) * UPKEEP_TROOP;
@@ -508,17 +541,37 @@ export default function App() {
     playerTradeRoutes.forEach(r => {
       const tradeBonus = r.shipType === 'schooner' ? 250 : 100;
       grossGold += tradeBonus;
+      maxGoldProduction += tradeBonus;
     });
 
     const netGold = grossGold - upkeepGold;
-    return { netGold, netGoods: grossGoods, upkeepGold, grossGold };
+    return { 
+      netGold, 
+      netGoods: grossGoods, 
+      upkeepGold, 
+      grossGold, 
+      razePenaltyGold, 
+      razePenaltyGoods, 
+      maxGoldProduction, 
+      maxGoodsProduction 
+    };
   }, [gameState, player]);
 
   const elapsedPlayTime = useMemo(() => {
     if (!gameState || !gameState.gameStartTime) return '0s';
     const start = new Date(gameState.gameStartTime).getTime();
-    const elapsedMs = Math.max(0, Date.now() - start);
-    return formatDuration(elapsedMs);
+    const totalPaused = gameState.totalPausedMs || 0;
+    
+    // When paused, exclude time spent in current pause session
+    let currentPauseMs = 0;
+    if (gameState.isPaused) {
+      const pauseStart = gameState.pausedAt ? new Date(gameState.pausedAt).getTime() : Date.now();
+      currentPauseMs = Math.max(0, Date.now() - pauseStart);
+    }
+    
+    const elapsedMs = Math.max(0, Date.now() - start - totalPaused - currentPauseMs);
+    const formatted = formatDuration(elapsedMs);
+    return gameState.isPaused ? `${formatted} (PAUSED)` : formatted;
   }, [gameState, secondsToNextTick]);
 
   const remainingRoundTime = useMemo(() => {
@@ -530,7 +583,8 @@ export default function App() {
         : 15 * 60;
     const remainingTicks = Math.max(0, (gameState.roundLimitTicks || 1000) - gameState.currentTick);
     const totalSecs = (remainingTicks - 1) * tickDurationSecs + secondsToNextTick;
-    return formatDuration(Math.max(0, totalSecs * 1000));
+    const formatted = formatDuration(Math.max(0, totalSecs * 1000));
+    return gameState.isPaused ? `${formatted} (PAUSED)` : formatted;
   }, [gameState, secondsToNextTick]);
 
   if (loading) {
@@ -590,13 +644,29 @@ export default function App() {
           {/* Real-time Ticking HUD */}
           <div className="flex items-center gap-4 bg-slate-950/60 px-4 py-2.5 rounded-2xl border border-slate-800/80 flex-1 lg:flex-initial max-w-sm">
             {gameState?.isPaused ? (
-              <div className="flex items-center gap-2.5 py-1">
-                <div className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse flex-shrink-0" />
-                <div className="font-mono">
-                  <div className="text-[10px] text-amber-400 font-bold tracking-wider uppercase">ENGINE PAUSED</div>
-                  <div className="text-[9px] text-neutral-400 font-bold mt-0.5">DEVELOPER MAINTENANCE</div>
+              <>
+                <div className="text-left font-mono flex-shrink-0">
+                  <div className="text-[9px] text-amber-400 tracking-wider font-bold uppercase flex items-center gap-1">
+                    <Pause className="w-3 h-3 text-amber-400" /> PAUSED
+                  </div>
+                  <div className="text-sm font-bold text-amber-400 flex items-center gap-1.5 mt-0.5">
+                    {formatCountdown(secondsToNextTick)}
+                  </div>
                 </div>
-              </div>
+
+                <div className="flex-1 space-y-1 font-mono">
+                  <div className="w-full bg-amber-950/40 h-1.5 rounded-full overflow-hidden border border-amber-500/30">
+                    <div 
+                      className="bg-amber-500/80 h-full rounded-full" 
+                      style={{ width: `${tickProgressPercent}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[8px] text-amber-400/80 font-bold">
+                    <span>Tick {gameState?.currentTick} (Frozen)</span>
+                    <span>ENGINE PAUSED</span>
+                  </div>
+                </div>
+              </>
             ) : (
               <>
                 <div className="text-left font-mono flex-shrink-0">
@@ -759,7 +829,14 @@ export default function App() {
               </div>
               <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800 flex flex-col justify-between">
                 <div>
-                  <div className="text-neutral-500 text-[9px] font-bold">GOLD</div>
+                  <div className="text-neutral-500 text-[9px] font-bold flex items-center justify-between">
+                    <span>GOLD</span>
+                    {netIncome.razePenaltyGold > 0 && (
+                      <span className="text-[8px] text-rose-400 font-bold animate-pulse">
+                        🔥 -{netIncome.razePenaltyGold}G
+                      </span>
+                    )}
+                  </div>
                   <div className="text-sm font-bold text-yellow-500 mt-1">{player.gold.toLocaleString()} G</div>
                 </div>
                 {gameState && (
@@ -770,17 +847,34 @@ export default function App() {
                     <div className="text-[8px] text-neutral-500 font-mono mt-0.5 leading-none">
                       ({netIncome.grossGold}G gross - {netIncome.upkeepGold}G upkeep)
                     </div>
+                    {netIncome.razePenaltyGold > 0 && (
+                      <div className="text-[7.5px] text-rose-400 font-mono mt-1 font-bold leading-tight">
+                        🔥 Raze Loss: -{netIncome.razePenaltyGold}G/tick
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
               <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800 flex flex-col justify-between">
                 <div>
-                  <div className="text-neutral-500 text-[9px] font-bold">CARGO/WOOD</div>
+                  <div className="text-neutral-500 text-[9px] font-bold flex items-center justify-between">
+                    <span>CARGO/WOOD</span>
+                    {netIncome.razePenaltyGoods > 0 && (
+                      <span className="text-[8px] text-rose-400 font-bold animate-pulse">
+                        🔥 -{netIncome.razePenaltyGoods}W
+                      </span>
+                    )}
+                  </div>
                   <div className="text-sm font-bold text-teal-400 mt-1">{player.goods.toLocaleString()} W</div>
                 </div>
                 {gameState && (
                   <div className="text-[10px] text-teal-400 font-bold mt-1.5 pt-1 border-t border-slate-900">
                     +{netIncome.netGoods.toLocaleString()} /tick
+                    {netIncome.razePenaltyGoods > 0 && (
+                      <div className="text-[7.5px] text-rose-400 font-mono mt-0.5 font-bold leading-tight">
+                        🔥 Raze Loss: -{netIncome.razePenaltyGoods}W/tick
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -865,6 +959,7 @@ export default function App() {
                   scoutReports={gameState.scoutReports}
                   tradeRoutes={gameState.tradeRoutes}
                   players={gameState.players}
+                  news={gameState.news}
                   onLaunchAttack={handleLaunchAttack}
                   onLaunchScout={handleLaunchScout}
                   onLaunchTransfer={handleLaunchTransfer}

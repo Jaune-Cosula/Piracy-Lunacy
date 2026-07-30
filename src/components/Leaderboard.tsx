@@ -22,7 +22,11 @@ import {
   Lock,
   Unlock,
   CheckCircle2,
-  RotateCcw
+  RotateCcw,
+  Crown,
+  Flag,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 
 interface LeaderboardProps {
@@ -75,6 +79,63 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
       verifyAdminKey(savedKey, true);
     }
   }, []);
+
+  // Settle vote state
+  const [isSubmittingVote, setIsSubmittingVote] = useState(false);
+  const [voteError, setVoteError] = useState<string | null>(null);
+
+  const totalPlayersCount = Object.keys(players).length;
+  const now = Date.now();
+  const INACTIVITY_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+  const settledPlayersCount = useMemo(() => {
+    return (Object.values(players) as Player[]).filter(p => {
+      if (p.settleVoted) return true;
+      if (p.lastActiveTime) {
+        const elapsed = now - new Date(p.lastActiveTime).getTime();
+        return elapsed >= INACTIVITY_MS;
+      }
+      return false;
+    }).length;
+  }, [players, now]);
+
+  const currentPlayerObj = currentPlayerId ? players[currentPlayerId] : null;
+  const isCurrentPlayerVoted = currentPlayerObj?.settleVoted || false;
+
+  const handleToggleVoteSettle = async () => {
+    const token = localStorage.getItem('piracy_auth_token');
+    if (!token) {
+      setVoteError('You must be logged in to vote to settle, Captain!');
+      return;
+    }
+    setIsSubmittingVote(true);
+    setVoteError(null);
+    try {
+      const res = await fetch('/api/game/vote-settle', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ settleVoted: !isCurrentPlayerVoted })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setVoteError(data.error || 'Failed to update vote');
+      } else {
+        setSuccessMsg(
+          !isCurrentPlayerVoted
+            ? '🗳️ Vote recorded! You have voted to Settle winner & admit defeat.'
+            : '↩️ Vote rescinded! Your vote to settle has been removed.'
+        );
+        setTimeout(() => setSuccessMsg(null), 3500);
+      }
+    } catch (err: any) {
+      setVoteError(err.message || 'Network error updating vote');
+    } finally {
+      setIsSubmittingVote(false);
+    }
+  };
 
   const verifyAdminKey = async (keyToTest: string, isSilent = false) => {
     if (!keyToTest) return;
@@ -325,6 +386,96 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
       
       {/* LEFT COLUMN: Ranks & Scoreboard */}
       <div className="lg:col-span-5 space-y-6">
+
+        {/* Victory / Game Ended Announcement Banner */}
+        {gameStateFull?.gameEnded && (
+          <div className="bg-amber-950/40 border-2 border-amber-500/60 rounded-3xl p-5 shadow-2xl space-y-3 relative overflow-hidden">
+            <div className="absolute top-0 right-0 transform translate-x-4 -translate-y-4 w-24 h-24 bg-amber-500/10 rounded-full blur-xl pointer-events-none" />
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-amber-500/20 rounded-2xl border border-amber-500/40">
+                <Crown className="w-8 h-8 text-amber-400 animate-pulse" />
+              </div>
+              <div>
+                <span className="text-[10px] font-black uppercase text-amber-400 tracking-widest bg-amber-500/20 px-2 py-0.5 rounded border border-amber-500/30">
+                  🏆 ERA CONCLUDED
+                </span>
+                <h2 className="text-base font-bold text-amber-100 mt-1">
+                  Captain {gameStateFull.winnerPlayerName || rankedPlayers[0]?.username || 'Leader'} Has Won!
+                </h2>
+              </div>
+            </div>
+            <p className="text-xs text-amber-200/90 font-mono leading-relaxed">
+              All Captains have agreed to settle the round (or reached 24h inactivity). Victory has been officially declared for the leading High Seas Sovereign!
+            </p>
+          </div>
+        )}
+
+        {/* Settle Winner / Surrender Card */}
+        {!gameStateFull?.gameEnded && (
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-2xl space-y-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <h4 className="text-xs font-black uppercase text-amber-400 tracking-widest flex items-center gap-2">
+                  <Flag className="w-4 h-4 text-amber-400" />
+                  Settle Winner (Surrender)
+                </h4>
+                <p className="text-[10.5px] text-slate-400 font-mono mt-0.5">
+                  Concede defeat to the leader to end the round early.
+                </p>
+              </div>
+              <span className="text-[11px] font-mono font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2.5 py-1 rounded-xl">
+                {settledPlayersCount} / {totalPlayersCount} Votes
+              </span>
+            </div>
+
+            {/* Progress bar */}
+            <div className="w-full bg-slate-950 h-2.5 rounded-full overflow-hidden border border-slate-800">
+              <div 
+                className="bg-gradient-to-r from-amber-500 to-yellow-400 h-full transition-all duration-500"
+                style={{ width: `${Math.round((settledPlayersCount / Math.max(1, totalPlayersCount)) * 100)}%` }}
+              />
+            </div>
+
+            <p className="text-[11px] font-mono text-slate-300 leading-relaxed bg-slate-950/60 p-3 rounded-xl border border-slate-800/80">
+              If <strong>all active Captains</strong> vote to settle, the game ends early and Captain <strong className="text-amber-400">{rankedPlayers[0]?.username || 'Leader'}</strong> is declared victor.
+              <br />
+              <span className="text-[10px] text-slate-400 block mt-1">
+                ⏰ <em>Inactivity Rule:</em> Captains inactive for 24+ hours (without logging in or taking action) are automatically checked.
+              </span>
+            </p>
+
+            {currentPlayerObj && (
+              <div className="pt-1">
+                <button
+                  type="button"
+                  onClick={handleToggleVoteSettle}
+                  disabled={isSubmittingVote}
+                  className={`w-full py-2.5 px-4 rounded-xl font-mono text-xs font-bold transition flex items-center justify-center gap-2 border cursor-pointer ${
+                    isCurrentPlayerVoted
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30'
+                      : 'bg-amber-500/10 text-amber-300 border-amber-500/30 hover:bg-amber-500/20'
+                  }`}
+                >
+                  {isCurrentPlayerVoted ? (
+                    <>
+                      <CheckSquare className="w-4 h-4 text-emerald-400" />
+                      <span>You Have Voted to Settle (Click to Rescind)</span>
+                    </>
+                  ) : (
+                    <>
+                      <Square className="w-4 h-4 text-amber-400" />
+                      <span>Vote to Settle & Admit Defeat to {rankedPlayers[0]?.username || 'Leader'}</span>
+                    </>
+                  )}
+                </button>
+                {voteError && (
+                  <p className="text-rose-400 text-[11px] font-mono mt-2 text-center">{voteError}</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-2xl">
           <div className="flex items-center gap-2 mb-4">
             <Trophy className="w-5 h-5 text-yellow-500 animate-bounce" />
@@ -342,6 +493,9 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
               else if (rank === 2) medal = '🥈';
               else if (rank === 3) medal = '🥉';
 
+              const isInactive24h = p.lastActiveTime && (now - new Date(p.lastActiveTime).getTime() >= INACTIVITY_MS);
+              const isSettled = p.settleVoted || isInactive24h;
+
               return (
                 <div
                   key={p.id}
@@ -356,9 +510,25 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                       {medal || rank}
                     </span>
                     <FlagSymbol flagId={p.flagId} color={p.flagColor} size="sm" />
-                    <span className="truncate max-w-[120px] text-neutral-200">
-                      {p.username} {isMe && <span className="text-[10px] text-rose-400 font-bold">(You)</span>}
-                    </span>
+                    <div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="truncate max-w-[120px] text-neutral-200 font-bold">
+                          {p.username}
+                        </span>
+                        {isMe && <span className="text-[10px] text-rose-400 font-bold">(You)</span>}
+                      </div>
+                      <div className="mt-0.5">
+                        {isSettled ? (
+                          <span className="text-[9.5px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.2 rounded inline-flex items-center gap-1">
+                            {p.settleVoted ? '✓ Settled' : '💤 24h Inactive (Auto)'}
+                          </span>
+                        ) : (
+                          <span className="text-[9.5px] font-mono text-slate-500 bg-slate-900 border border-slate-800 px-1 py-0.2 rounded">
+                            Active
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </div>
 
                   <div className="text-right">
@@ -694,7 +864,7 @@ export const Leaderboard: React.FC<LeaderboardProps> = ({
                     {getNewsIcon(item.type)}
                   </div>
                   <div>
-                    <div className="text-neutral-300 leading-relaxed text-[11.5px]">{item.message}</div>
+                    <div className="text-neutral-300 leading-relaxed text-[11.5px] whitespace-pre-line">{item.message}</div>
                     <div className="text-[9px] text-neutral-400 mt-1">
                       Tick {item.tick} • {new Date(item.timestamp).toLocaleTimeString()}
                     </div>

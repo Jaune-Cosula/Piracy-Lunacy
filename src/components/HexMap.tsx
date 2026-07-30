@@ -474,7 +474,18 @@ export const HexMap: React.FC<HexMapProps> = ({
                         </div>
                         <div className="flex justify-between mt-0.5 text-[9.5px]">
                           <span>Production / Tick:</span>
-                          <span className="text-yellow-500">+{p.baseGoldProduction}G / +{p.baseGoodsProduction}W</span>
+                          <span className="text-yellow-500 font-bold">
+                            +{p.razedTicksRemaining > 24 
+                              ? Math.floor(p.baseGoldProduction / 3) 
+                              : p.razedTicksRemaining > 0 
+                                ? Math.floor(p.baseGoldProduction * 2 / 3) 
+                                : p.baseGoldProduction}G / +{p.razedTicksRemaining > 24 
+                              ? Math.floor(p.baseGoodsProduction / 3) 
+                              : p.razedTicksRemaining > 0 
+                                ? Math.floor(p.baseGoodsProduction * 2 / 3) 
+                                : p.baseGoodsProduction}W
+                            {p.razedTicksRemaining > 0 && <span className="text-rose-400 text-[8.5px] ml-1">(RAZED)</span>}
+                          </span>
                         </div>
                       </div>
                     ) : (
